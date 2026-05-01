@@ -4,6 +4,68 @@
 
 ---
 
+## 🟢 Start Here — Exceptions in Plain English
+
+### What is an exception?
+
+An exception is Java's way of saying **"something went wrong."** Instead of crashing silently, Java throws an exception — like a fire alarm going off.
+
+```java
+int result = 10 / 0;   // 💥 ArithmeticException! Java can't divide by zero.
+// Java stops what it's doing and "throws" this error up the call stack
+// until someone "catches" it — or the program crashes.
+```
+
+### The try-catch pattern
+
+Think of `try-catch` like cooking with a safety net:
+
+```java
+try {
+    // TRY to do something that might go wrong
+    String text = readFile("data.txt");     // file might not exist!
+} catch (FileNotFoundException e) {
+    // CATCH the problem and handle it gracefully
+    System.out.println("File not found, using default data");
+    text = "default";
+}
+// Program continues running — no crash!
+```
+
+### Two types of exceptions — checked vs unchecked
+
+| Type | What it means | Example | Must you handle it? |
+|------|--------------|---------|:-------------------:|
+| **Checked** | "This could go wrong and you should plan for it" | File not found, network down | ✅ Yes — compiler forces you |
+| **Unchecked** | "This is a bug in your code" | Null pointer, divide by zero | ❌ No — but you should fix the bug |
+
+**Simple analogy:**
+- **Checked** = weather forecast says "might rain" → you're forced to bring an umbrella (the compiler makes you)
+- **Unchecked** = you trip over your own shoelaces → that's a bug in how you tied them (fix your code)
+
+### try-with-resources — auto-closing things
+
+Some things need to be **closed** when you're done — like closing a door after you enter. Files, database connections, network sockets.
+
+```java
+// BEFORE: you had to remember to close manually (easy to forget)
+FileReader reader = new FileReader("data.txt");
+try {
+    // use reader
+} finally {
+    reader.close();   // must close even if error happens
+}
+
+// AFTER (Java 7+): Java closes it for you automatically
+try (FileReader reader = new FileReader("data.txt")) {
+    // use reader
+}   // reader is automatically closed here — even if an error happened
+```
+
+> The key takeaway: exceptions are Java's error-handling system. `try` = attempt something risky. `catch` = handle the error. `finally` / try-with-resources = always clean up. Checked exceptions force you to plan ahead; unchecked exceptions point to bugs.
+
+---
+
 ## 📚 Study Material
 
 ### 1. Exception Hierarchy

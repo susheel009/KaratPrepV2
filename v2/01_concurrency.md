@@ -4,6 +4,65 @@
 
 ---
 
+## 🟢 Start Here — Concurrency in Plain English
+
+### What is concurrency?
+
+Imagine a **restaurant kitchen**. One chef (single thread) can only do one thing at a time — chop, then cook, then plate. But a busy restaurant has **multiple chefs** (multiple threads) working at the same time. That's concurrency: multiple tasks making progress at the same time.
+
+In Java, your program runs on **threads**. By default you have one (the "main" thread). When you create more threads, they can do work simultaneously — like having more chefs in the kitchen.
+
+### Why is it tricky?
+
+The problem starts when two chefs reach for the **same knife** at the same time. In programming, that "knife" is **shared data** — a variable, a list, a counter that multiple threads read and write.
+
+```java
+// Imagine two threads both running this at the same time:
+int balance = 1000;
+
+// Thread A: withdraw 500         // Thread B: withdraw 500
+// A reads balance: 1000          // B reads balance: 1000  (BEFORE A writes!)
+// A sets balance: 500            // B sets balance: 500    (B didn't see A's change!)
+// Result: balance = 500, but we withdrew 1000 total!
+// This is called a RACE CONDITION — the outcome depends on who runs first.
+```
+
+### How do we fix it?
+
+**Locks.** Think of a lock like a bathroom door lock — only one person can enter at a time. Everyone else waits.
+
+```java
+// `synchronized` is Java's simplest lock:
+synchronized (this) {
+    // Only ONE thread can be inside this block at a time.
+    // Other threads wait at the door until the first one exits.
+    balance -= amount;
+}
+// Now both withdrawals happen one at a time — no lost money.
+```
+
+### Key vocabulary (in simple terms)
+
+| Word | What it means (simply) |
+|------|----------------------|
+| **Thread** | A worker that runs your code. You can have many workers. |
+| **Race condition** | Two workers clash over the same thing → wrong result. |
+| **Lock / synchronized** | A door lock — only one worker enters at a time. |
+| **Deadlock** | Two workers each waiting for the other to finish — nobody moves. |
+| **volatile** | A "shared whiteboard" — when one worker writes, all others can immediately read the new value. |
+| **Atomic** | An operation that's impossible to interrupt halfway. Like flipping a light switch — it's either on or off, never halfway. |
+| **Thread pool** | A team of workers standing ready. You give them tasks instead of hiring a new worker for every task. |
+
+### The three big problems in concurrency
+
+1. **Race conditions** — two threads change the same data → corruption. Fix: locks, atomics.
+2. **Deadlocks** — two threads each hold what the other needs → freeze. Fix: always lock in the same order.
+3. **Visibility** — one thread changes a value but the other thread doesn't see the change (stale data). Fix: `volatile` or `synchronized`.
+
+> Once you understand these three problems, the rest of concurrency is just different tools to solve them more efficiently.
+
+---
+
 ## 📚 Study Material
 
 ### 1. Thread Lifecycle

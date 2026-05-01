@@ -4,6 +4,88 @@
 
 ---
 
+## 🟢 Start Here — OOP in Plain English
+
+### What is Object-Oriented Programming?
+
+OOP is about modelling the real world. Instead of writing one long script, you create **objects** — things that have **data** (what they know) and **behaviour** (what they can do).
+
+```java
+// A Dog object:
+//   Data:     name = "Rex", breed = "Labrador", age = 3
+//   Behaviour: bark(), fetch(), eat()
+
+class Dog {
+    String name;         // data (what the dog knows about itself)
+    String breed;
+    int age;
+    
+    void bark() {        // behaviour (what the dog can do)
+        System.out.println(name + " says Woof!");
+    }
+}
+
+Dog rex = new Dog();     // create an object (a specific dog)
+rex.name = "Rex";
+rex.bark();              // "Rex says Woof!"
+```
+
+### The four big ideas
+
+**1. Encapsulation** — Hide the messy details, show only what's needed.
+> Think of a TV remote. You press "volume up" — you don't need to know how the circuits work inside. The buttons are the *public interface*, the wiring is *private*.
+
+```java
+class BankAccount {
+    private double balance;          // hidden — nobody can touch this directly
+    
+    public void deposit(double amount) {   // controlled access
+        if (amount > 0) balance += amount;  // validation protects the data
+    }
+}
+```
+
+**2. Inheritance** — Create new things based on existing things.
+> A "Sports Car" is a type of "Car". It has everything a car has (engine, wheels) plus extra stuff (turbo, spoiler).
+
+```java
+class Animal { void breathe() { } }
+class Dog extends Animal { void bark() { } }  // Dog inherits breathe() and adds bark()
+```
+
+**3. Polymorphism** — Same action, different behaviour depending on the object.
+> Tell any animal to "speak" — a dog barks, a cat meows, a cow moos. Same command, different result.
+
+```java
+Animal a = new Dog();    // variable type is Animal, but actual object is a Dog
+a.speak();               // calls Dog's version of speak() — "Woof!"
+```
+
+**4. Abstraction** — Define *what* something does without saying *how*.
+> A "payment method" can charge money. You don't care if it's a credit card, PayPal, or crypto — you just call `charge()`.
+
+```java
+interface PaymentMethod {
+    void charge(double amount);   // WHAT it does (contract)
+}
+// HOW it does it is up to each implementation
+```
+
+### Interface vs Class — the simplest explanation
+
+- **Class** = a blueprint for creating objects (has data + code)
+- **Interface** = a contract / promise ("I can do these things") — no data, just method signatures
+- A class can implement multiple interfaces but extend only one other class
+
+### What's `final`? What's `static`?
+
+- **`final`** = "this can't change." Final variable = can't reassign. Final class = can't extend. Final method = can't override.
+- **`static`** = "belongs to the class, not any specific object." All objects share it. Like a classroom whiteboard that all students share.
+
+> Once you understand that objects = data + behaviour, and these four concepts let you organise code cleanly — you're ready for the deeper material below.
+
+---
+
 ## 📚 Study Material
 
 ### 1. Four Pillars of OOP
