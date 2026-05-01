@@ -4,6 +4,81 @@
 
 ---
 
+## 🟢 Start Here — Strings in Plain English
+
+### What is a String?
+
+A String is simply **text** — a sequence of characters like `"Hello"`, `"Java"`, or `"account-12345"`. It's the most common data type in any program.
+
+```java
+String greeting = "Hello, World!";   // creates a String
+System.out.println(greeting);        // prints: Hello, World!
+```
+
+### Why are Strings "immutable"?
+
+**Immutable means "can't be changed."** Once you create a String, the text inside it never changes. If you "modify" it, Java actually creates a **brand new String**.
+
+```java
+String name = "Alice";
+name.toUpperCase();        // this does NOT change name!
+System.out.println(name);  // still "Alice"
+
+name = name.toUpperCase(); // NOW name points to a NEW string "ALICE"
+System.out.println(name);  // "ALICE" — the old "Alice" is abandoned
+```
+
+**Why?** Think of it like a printed book. You can't erase words from a book — you'd have to print a new book with the changes. Java does the same with Strings for safety and performance.
+
+### The String pool — Java saves memory
+
+When you write `"Hello"` in your code, Java stores it in a special **pool**. If you write `"Hello"` again somewhere else, Java reuses the same one instead of creating a new copy.
+
+```java
+String a = "Hello";    // stored in the pool
+String b = "Hello";    // Java says "I already have Hello" → reuses it
+// a and b point to the EXACT SAME object in memory
+
+String c = new String("Hello");  // forces a NEW object (not from pool)
+```
+
+### == vs equals() — the #1 String mistake
+
+```java
+String a = "Hello";
+String b = "Hello";
+String c = new String("Hello");
+
+a == b;         // true  (same object in pool)
+a == c;         // false (different objects — one from pool, one from heap)
+a.equals(c);    // true  (same text — THIS is what you want)
+
+// RULE: Always use .equals() to compare Strings. Never use ==.
+```
+
+### StringBuilder — building Strings efficiently
+
+If you're gluing many strings together (like in a loop), use `StringBuilder` — it's much faster because it modifies one buffer instead of creating dozens of new Strings.
+
+```java
+// SLOW — creates a new String every iteration
+String result = "";
+for (int i = 0; i < 1000; i++) {
+    result += i;   // new String created each time!
+}
+
+// FAST — one buffer, appends in place
+StringBuilder sb = new StringBuilder();
+for (int i = 0; i < 1000; i++) {
+    sb.append(i);  // modifies the same buffer
+}
+String result = sb.toString();
+```
+
+> Key takeaways: Strings are immutable (can't change), use `.equals()` not `==` to compare, and use `StringBuilder` when building strings in a loop.
+
+---
+
 ## 📚 Study Material
 
 ### 1. String Immutability — Why It Matters
