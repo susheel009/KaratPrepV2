@@ -1,0 +1,25 @@
+{
+  "github": {
+    "repository": "https://github.com/susheel009/KaratPrepV2",
+    "personal_access_token_env": "ghp_J7SLGh5Noch1durv8kq0m4UWNXOP8n4Jx9dE",
+    "auto_sync": true,
+    "sync_interval_minutes": 30
+  },
+  "workspace": {
+    "root_path": ".",
+    "excluded_paths": [
+      ".git",
+      "node_modules",
+      ".claude/settings.json"
+    ]
+  },
+  "ai_assistant": {
+    "can_read_pat_token": false,
+    "allowed_operations": [
+      "read_repository_files",
+      "analyze_code",
+      "suggest_improvements",
+      "create_pull_requests"
+    ]
+  }
+}
