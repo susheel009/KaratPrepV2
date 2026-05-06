@@ -1,456 +1,693 @@
 # 14 — Spring AOP & Data
 
-[← Back to Index](./00_INDEX.md) | **Priority: 🟢 Medium**
+> [← All topics](./00_INDEX.md) · [📝 Doubts log](./doubts/14_spring_aop_data_doubts.md) · [← Prev: 13 Spring REST](./13_spring_rest.md) · [Next: 15 Kafka →](./15_kafka.md)
+>
+> **Priority:** 🟢 Medium · **Related topics:** [11 Spring Core](./11_spring_core.md) · [12 Spring Boot (`@Transactional`, `@Async`)](./12_spring_boot.md) · [01 Concurrency](./01_concurrency.md) · [08 Design Patterns (Proxy)](./08_design_patterns.md)
+
+## Contents
+
+1. [The Problem](#1-the-problem-story-style-no-code) — cross-cutting concerns + database mapping
+2. [Walkthrough](#2-walkthrough-concept--tiny-example-pseudo-code-only) — proxy + N+1 in slow motion
+3. [First Code](#3-first-code-minimal-every-non-obvious-line-commented) — minimal aspect + JPA repo
+4. [Build Up — Practical Patterns](#4-build-up--practical-patterns)
+   - [4.1 What AOP solves](#41-what-aop-solves)
+   - [4.2 AOP terminology](#42-aop-terminology--the-five-words)
+   - [4.3 Advice types](#43-advice-types)
+   - [4.4 Pointcut expressions](#44-pointcut-expressions)
+   - [4.5 JPA basics](#45-jpa-basics--entity-persistence-context)
+   - [4.6 Spring Data repositories](#46-spring-data-repositories--methods-from-names)
+   - [4.7 Caching](#47-caching--cacheable-cacheevict)
+5. [Going Deep — Interview-Level Material](#5-going-deep--interview-level-material)
+   - [5.1 Spring AOP proxy mechanism](#51-spring-aop-proxy-mechanism)
+   - [5.2 Self-invocation trap](#52-self-invocation-trap)
+   - [5.3 Entity lifecycle + dirty checking](#53-entity-lifecycle--dirty-checking)
+   - [5.4 N+1 problem and three fixes](#54-the-n1-problem-and-three-fixes)
+   - [5.5 Optimistic vs pessimistic locking](#55-optimistic-vs-pessimistic-locking)
+   - [5.6 Transaction propagation](#56-transaction-propagation--cross-link-to-12)
+6. [Memory Aids](#6-memory-aids)
+7. [Cheat Sheet — Rapid-Fire Q&A](#7-cheat-sheet--rapid-fire-qa)
+8. [Self-Test](#8-self-test)
+9. [Glossary (in plain English)](#9-glossary-in-plain-english)
+
+> **15 minutes before the interview?** Skip to [§7 Cheat Sheet](#7-cheat-sheet--rapid-fire-qa) and [§6 Memory Aids](#6-memory-aids).
 
 ---
 
-## 🟢 Start Here — AOP & Database Access in Plain English
+## 1. The Problem (story-style, no code)
 
-### What is AOP (Aspect-Oriented Programming)?
+Two unrelated problems share a single chapter because Spring solves them with the **same trick**: it wraps your beans in proxies that handle the dull parts.
 
-Imagine every method in your app needs to: (1) log when it starts, (2) check permissions, (3) measure how long it takes. You could add that code to **every single method** — but that's messy and repetitive.
+**Problem 1 — concerns that cross every method.** Every business method needs the same boring scaffolding: log on entry, check permissions, time how long it took, start a transaction, retry on transient failure. If you write this in every method, the actual business logic disappears under twelve lines of ceremony. **AOP** (aspect-oriented programming) lets you state the rule once — "every service method gets entry/exit logging" — and Spring weaves it in around all of them at startup.
 
-**AOP lets you define that code ONCE and apply it everywhere automatically.**
+**Problem 2 — turning Java objects into database rows.** A `Trade` is a Java object. It needs to live in a `trades` SQL table. Saving, loading, querying, updating — written by hand, that's hundreds of lines of JDBC per entity. **Spring Data + JPA** (the spec, with Hibernate as the usual implementation) generates the boilerplate: declare an `@Entity`, declare a `Repository` *interface* (no implementation!), and Spring builds the SQL automatically.
 
-Think of it like a security camera at a store entrance. You don't install one inside every aisle — you put one at the door (the *aspect*), and it captures everyone who enters (*all methods*).
+The thread connecting both: **Spring wraps your beans in proxies**. The proxy intercepts method calls and weaves cross-cutting behaviour around them — transactions, security, caching, audit logging, lazy loading. Once you understand this single mechanism, every "magic" Spring annotation (`@Transactional`, `@Cacheable`, `@Async`, `@PreAuthorize`, JPA's lazy collections) makes sense.
 
-```java
-// WITHOUT AOP — logging scattered everywhere
-public void processOrder(Order o) {
-    log.info("Starting processOrder");     // repeated in every method
-    // ... business logic ...
-    log.info("Finished processOrder");     // repeated in every method
-}
-
-// WITH AOP — logging defined ONCE
-@Before("execution(* com.citi.service.*.*(..))")   // "before any method in service package"
-public void logEntry(JoinPoint jp) {
-    log.info("Starting {}", jp.getSignature().getName());
-}
-// Now EVERY service method gets automatic logging — zero changes to business code
-```
-
-### What is JPA / Spring Data?
-
-**JPA (Java Persistence API)** is how Java talks to databases. Instead of writing SQL by hand, you define Java classes and JPA translates them to database tables.
-
-**Spring Data JPA** makes it even easier — you just define an interface, and Spring writes the SQL for you.
-
-```java
-// Your Java class (entity) → maps to a database table
-@Entity
-public class Trade {
-    @Id
-    private Long id;
-    private String symbol;     // maps to a column called "symbol"
-    private int quantity;
-}
-
-// Your repository interface → Spring generates ALL the SQL
-public interface TradeRepository extends JpaRepository<Trade, Long> {
-    List<Trade> findBySymbol(String symbol);   // Spring generates: SELECT * FROM trade WHERE symbol = ?
-}
-
-// Usage — no SQL needed!
-List<Trade> appleTrades = tradeRepo.findBySymbol("AAPL");
-```
-
-### What's the N+1 problem? (the most common performance bug)
-
-If you load 100 orders and each order has items, JPA might run **101 queries** (1 for orders + 100 for each order's items). The fix is loading everything in one query with `JOIN FETCH`.
-
-> Key takeaway: AOP = define cross-cutting logic once, apply everywhere. JPA = Java objects ↔ database tables. Spring Data = write an interface, get SQL for free.
+> The two problems share three traps: **self-invocation skips the proxy**, **the N+1 query problem hides in lazy associations**, and **`@Transactional`'s rollback rules are not what you think they are**. We'll cover each.
 
 ---
 
-## 📚 Study Material — AOP
+## 2. Walkthrough (concept + tiny example, pseudo-code only)
 
-### 1. What AOP Solves
+Two scenes — the proxy in slow motion, then an N+1 in slow motion.
 
-Without AOP, cross-cutting concerns pollute every service method:
-```java
-// ❌ WITHOUT AOP — logging, timing, security scattered everywhere
-public Trade executeTrade(TradeRequest req) {
-    log.info("Entering executeTrade");              // logging
-    if (!securityContext.hasRole("TRADER")) throw…; // security
-    long start = System.nanoTime();                 // timing
-    try {
-        Trade result = doExecute(req);
-        long elapsed = System.nanoTime() - start;
-        metrics.record("trade.execute", elapsed);   // metrics
-        log.info("Exiting executeTrade");
-        return result;
-    } catch (Exception e) {
-        log.error("Failed", e);                     // error logging
-        throw e;
-    }
-}
+**Scene A: a `@Cacheable` proxy intercepts `getTrade(42)`.**
 
-// ✅ WITH AOP — business logic is clean
-@Timed @Secured("TRADER") @Audited
-public Trade executeTrade(TradeRequest req) {
-    return doExecute(req);                          // pure business logic
-}
-// Cross-cutting concerns are defined ONCE in aspects
-```
+| Step | What |
+|---|---|
+| 1 | Caller calls `tradeService.getTrade(42)`. The reference `tradeService` is actually a proxy generated by Spring. |
+| 2 | The proxy's `getTrade(42)` runs first. It computes a cache key from the args (`42`). |
+| 3 | Cache lookup: hit → return cached value, **never call the real method**. |
+| 4 | Cache miss → proxy invokes the real `tradeService.getTrade(42)`. |
+| 5 | Real method returns a `Trade`. Proxy stores it in the cache, then returns it to the caller. |
 
-### 2. AOP Terminology
+**Scene B: an N+1 query bug.**
 
-| Term | Meaning | Example |
-|------|---------|---------|
-| **Aspect** | Module containing cross-cutting logic | `@Aspect class LoggingAspect` |
-| **Join Point** | A point in execution (always a method call in Spring) | `executeTrade()` |
-| **Pointcut** | Expression selecting join points | `execution(* com.citi.service.*.*(..))` |
-| **Advice** | Code that runs at a join point | `@Before`, `@After`, `@Around` |
-| **Weaving** | Applying aspects to targets | At runtime via proxies (Spring) |
+You have 100 traders. Each has a list of trades, lazily loaded. You write `for (Trader t : traders) { t.getTrades().size(); }`.
 
-### 3. Advice Types with Code
+| Query | What runs |
+|---|---|
+| 1 | `SELECT * FROM traders` — 1 query, 100 rows. |
+| 2 | First iteration: `t.getTrades()` triggers `SELECT * FROM trades WHERE trader_id = ?` for trader 1. |
+| 3 | Second iteration: same SELECT for trader 2. |
+| ⋮ | … |
+| 101 | 100th iteration: same SELECT for trader 100. |
+| Total | **101 queries** to do what should be 1 query with a JOIN. |
+
+Two takeaways the walkthrough makes obvious:
+
+1. **The proxy gets the first call** — it can short-circuit (cache hit), wrap (transaction), or do nothing extra. The real method is never called directly from outside.
+2. **Lazy loading lies about cost.** Each `t.getTrades()` looks like a method call. Each is actually a SQL query.
+
+Now the actual code.
+
+---
+
+## 3. First Code (minimal, every non-obvious line commented)
 
 ```java
+// === A. Aspect — cross-cutting behaviour applied to many methods ===
 @Aspect
 @Component
-public class AuditAspect {
-    
-    // BEFORE — runs before the method
-    @Before("execution(* com.citi.service.TradeService.*(..))")
-    public void logEntry(JoinPoint jp) {
-        log.info("Calling {} with args {}", jp.getSignature().getName(), jp.getArgs());
-    }
-    
-    // AFTER RETURNING — runs after successful return
-    @AfterReturning(pointcut = "execution(* com.citi.service.*.*(..))", returning = "result")
-    public void logResult(JoinPoint jp, Object result) {
-        log.info("{} returned {}", jp.getSignature().getName(), result);
-    }
-    
-    // AFTER THROWING — runs after exception
-    @AfterThrowing(pointcut = "execution(* com.citi.service.*.*(..))", throwing = "ex")
-    public void logError(JoinPoint jp, Exception ex) {
-        log.error("{} threw {}", jp.getSignature().getName(), ex.getMessage());
-    }
-    
-    // AFTER — runs always (like finally)
-    @After("execution(* com.citi.service.*.*(..))")
-    public void logExit(JoinPoint jp) {
-        log.info("Exited {}", jp.getSignature().getName());
-    }
-    
-    // AROUND — most powerful: wraps the method, controls proceed()
-    @Around("@annotation(com.citi.Timed)")          // targets methods with @Timed annotation
-    public Object timeMethod(ProceedingJoinPoint pjp) throws Throwable {
+public class TimingAspect {
+    private final Logger log = LoggerFactory.getLogger(getClass());
+
+    // Pointcut: any method in any class within the service package
+    @Around("execution(* com.example.service.*.*(..))")
+    public Object time(ProceedingJoinPoint pjp) throws Throwable {
         long start = System.nanoTime();
         try {
-            Object result = pjp.proceed();           // ← actually calls the target method
-            return result;
+            return pjp.proceed();                      // ← actually call the real method
         } finally {
-            long elapsed = System.nanoTime() - start;
-            metrics.record(pjp.getSignature().getName(), elapsed);
+            long ms = (System.nanoTime() - start) / 1_000_000;
+            log.info("{} took {} ms", pjp.getSignature().toShortString(), ms);
         }
     }
 }
-```
 
-### 4. Pointcut Expressions
-
-```java
-// Method execution in specific package
-execution(* com.citi.service.*.*(..))
-//  ↑ return type (any)  ↑ any class  ↑ any method  ↑ any args
-
-// Only public methods
-execution(public * com.citi.service.*.*(..))
-
-// Methods returning void
-execution(void com.citi.service.*.*(..))
-
-// Specific method name
-execution(* com.citi.service.TradeService.execute*(..))
-
-// By annotation on method
-@annotation(com.citi.Timed)
-
-// By annotation on class
-@within(org.springframework.stereotype.Service)
-
-// All classes in package (and sub-packages)
-within(com.citi.service..*)
-
-// Combine with && || !
-execution(* com.citi.service.*.*(..)) && @annotation(Timed)
-```
-
-### 5. Spring AOP Proxy Mechanism
-
-```
-Caller → Proxy → Advice (Before/Around) → Target Method → Advice (After) → Caller
-
-Two proxy types:
-1. JDK Dynamic Proxy — if target implements an interface
-2. CGLIB Proxy — if target is a concrete class (creates a SUBCLASS)
-   Spring Boot defaults to CGLIB (proxyTargetClass=true)
-```
-
-⚠️ **Self-invocation trap (CRITICAL):**
-```java
-@Service
-public class OrderService {
-    @Timed
-    public void processOrder(Order o) { /* timed */ }
-    
-    public void batchProcess(List<Order> orders) {
-        for (Order o : orders) {
-            this.processOrder(o);   // ❌ `this` is the REAL object, not the proxy
-                                    // @Timed advice WILL NOT run
-        }
-    }
-}
-// The proxy only intercepts calls from OUTSIDE the bean
-// Internal calls (this.method()) go directly to the real object
-```
-
----
-
-## 📚 Study Material — Spring Data / JPA
-
-### 6. JPA Architecture
-
-```
-Your Code → Repository Interface → Spring Data JPA → JPA (Hibernate) → JDBC → Database
-
-Spring Data JPA generates the repository implementation at startup.
-You write ZERO boilerplate SQL for standard CRUD.
-```
-
-```java
-// Define entity
+// === B. JPA entity — maps to a SQL table ===
 @Entity
 @Table(name = "trades")
 public class Trade {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
-    @Column(nullable = false)
-    private String symbol;
-    
+    @Column(nullable = false) private String symbol;
     private int quantity;
-    
-    @Enumerated(EnumType.STRING)        // store enum as string, not ordinal
-    private Side side;
-    
-    @ManyToOne(fetch = FetchType.LAZY)   // default for @ManyToOne is EAGER — override to LAZY
+
+    @ManyToOne(fetch = FetchType.LAZY)                  // lazy by default — see N+1 below
     @JoinColumn(name = "trader_id")
     private Trader trader;
-    
-    @Version                             // optimistic locking field
-    private Long version;
+
+    @Version private Long version;                      // optimistic locking field — auto-managed
+    // getters/setters/ctors omitted
 }
 
-// Define repository — Spring generates implementation
+// === C. Spring Data repository — Spring writes the SQL for you ===
 public interface TradeRepository extends JpaRepository<Trade, Long> {
-    List<Trade> findBySymbolAndSide(String symbol, Side side);  // derived query
-    
-    @Query("SELECT t FROM Trade t WHERE t.quantity > :min")     // JPQL
+
+    // Method-name query — Spring generates: SELECT * FROM trades WHERE symbol = ? AND side = ?
+    List<Trade> findBySymbolAndSide(String symbol, Side side);
+
+    // Custom JPQL
+    @Query("SELECT t FROM Trade t WHERE t.quantity > :min")
     List<Trade> findLargeOrders(@Param("min") int min);
-    
-    @Query(value = "SELECT * FROM trades WHERE symbol = ?1", nativeQuery = true)  // native SQL
-    List<Trade> findBySymbolNative(String symbol);
-    
-    Page<Trade> findByTrader(Trader trader, Pageable pageable); // pagination
+}
+
+// === D. Service uses the repo. @Transactional creates a proxy. ===
+@Service
+public class TradeService {
+    private final TradeRepository repo;
+    public TradeService(TradeRepository repo) { this.repo = repo; }
+
+    @Transactional                                       // → wrapped in a proxy at startup
+    public Trade place(Trade t) {                        // proxy starts a tx, commits on return
+        return repo.save(t);
+    }
 }
 ```
 
-### 7. Entity Lifecycle (Persistence Context)
+What just happened: 35 lines of declarations and Spring builds it all. The aspect adds timing to every service method. The repo writes the SQL. The proxy starts and commits transactions. The runtime work happens in code you didn't write.
+
+---
+
+## 4. Build Up — Practical Patterns
+
+### 4.1 What AOP solves
+
+Without AOP, cross-cutting concerns scatter through every method:
+
+```java
+public Trade execute(TradeRequest req) {
+    log.info("entering execute");                     // logging
+    if (!securityCtx.hasRole("TRADER")) throw ...;     // security
+    long start = System.nanoTime();                   // timing
+    try {
+        var result = doExecute(req);
+        metrics.record("execute", System.nanoTime() - start);   // metrics
+        log.info("exit");
+        return result;
+    } catch (Exception e) {
+        log.error("failed", e);
+        throw e;
+    }
+}
+```
+
+Same scaffolding in every business method. Pure noise. With AOP it collapses to:
+
+```java
+@Timed @Secured("TRADER") @Audited
+public Trade execute(TradeRequest req) {
+    return doExecute(req);                            // pure business logic
+}
+```
+
+The aspects are defined **once**, in their own classes, and applied wherever pointcuts match.
+
+### 4.2 AOP terminology — the five words
+
+| Term | Plain meaning |
+|---|---|
+| **Aspect** | A class that contains cross-cutting code (`@Aspect class TimingAspect`). |
+| **Join point** | A point in the program where advice can run. **In Spring AOP this is always a method call** (the AspectJ spec covers more: field access, constructor, etc.). |
+| **Pointcut** | An expression that picks which join points the advice applies to. (`execution(* com.example.service.*.*(..))`). |
+| **Advice** | The code that runs at the matched join points (`@Before`, `@After`, `@Around`). |
+| **Weaving** | The act of combining advice with the target. **Spring weaves at runtime via proxies**; AspectJ can also weave at compile or load time. |
+
+### 4.3 Advice types
+
+```java
+@Aspect @Component
+public class AuditAspect {
+
+    // Runs BEFORE the method
+    @Before("execution(* com.example.service.TradeService.*(..))")
+    public void logEntry(JoinPoint jp) {
+        log.info("calling {} args={}", jp.getSignature().getName(), Arrays.toString(jp.getArgs()));
+    }
+
+    // After successful return — `result` is the return value
+    @AfterReturning(pointcut = "execution(* com.example.service.*.*(..))", returning = "result")
+    public void logResult(JoinPoint jp, Object result) {
+        log.info("{} returned {}", jp.getSignature().getName(), result);
+    }
+
+    // After exception — `ex` is the thrown exception
+    @AfterThrowing(pointcut = "execution(* com.example.service.*.*(..))", throwing = "ex")
+    public void logError(JoinPoint jp, Exception ex) {
+        log.error("{} threw {}", jp.getSignature().getName(), ex.getMessage());
+    }
+
+    // After (regardless of outcome) — like a finally
+    @After("execution(* com.example.service.*.*(..))")
+    public void logExit(JoinPoint jp) { /* … */ }
+
+    // AROUND — most powerful: you control whether the method runs
+    @Around("@annotation(com.example.Timed)")          // matches methods annotated with @Timed
+    public Object time(ProceedingJoinPoint pjp) throws Throwable {
+        long start = System.nanoTime();
+        try {
+            return pjp.proceed();                      // call the real method
+        } finally {
+            metrics.record(pjp.getSignature().getName(), System.nanoTime() - start);
+        }
+    }
+}
+```
+
+> ⚠ **`@Around` is powerful but easy to break.** Forget to call `pjp.proceed()` and the real method never runs. Catch and swallow `pjp.proceed()`'s throwable and you'll silently mask exceptions. Use `@Before`/`@After` whenever they suffice.
+
+### 4.4 Pointcut expressions
+
+```java
+execution(* com.example.service.*.*(..))             // any method in any class in service package
+//        ↑ return type (any)  ↑ class  ↑ method  ↑ args
+execution(public * com.example.service.*.*(..))       // public only
+execution(* com.example.service.TradeService.execute*(..))  // methods starting with "execute"
+execution(void com.example.service.*.*(..))           // void return only
+@annotation(com.example.Timed)                        // methods annotated @Timed
+@within(org.springframework.stereotype.Service)        // any method on a class annotated @Service
+within(com.example.service..*)                         // any class in service package or subpackages
+
+// Combine with && || !
+execution(* com.example.service.*.*(..)) && @annotation(com.example.Timed)
+```
+
+### 4.5 JPA basics — entity, persistence context
+
+A **JPA entity** is a Java class mapped to a SQL table:
+
+```java
+@Entity
+@Table(name = "trades")
+public class Trade {
+    @Id @GeneratedValue private Long id;
+    @Column(nullable = false) private String symbol;
+    private int quantity;
+    @Enumerated(EnumType.STRING) private Side side;     // store enum as string, not ordinal
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "trader_id")
+    private Trader trader;
+
+    @Version private Long version;                      // optimistic-lock counter
+}
+```
+
+The **persistence context** is JPA's first-level cache and dirty tracker. Inside a transaction, every entity loaded or saved is **managed** — the persistence context tracks every change and writes them all on commit:
 
 ```
-    new Trade()          repo.save(trade)        tx commits / detach
-        │                      │                       │
-   TRANSIENT ──────→ MANAGED (PERSISTENT) ──────→ DETACHED
-    (not tracked)     (changes auto-flushed)     (no longer tracked)
-                           │
-                      repo.delete()
-                           │
-                      REMOVED
+new Trade()                      repo.save(trade)               tx commits
+    │                                  │                              │
+TRANSIENT  ───────────────▶ MANAGED (PERSISTENT) ─────────────▶ DETACHED
+                                       │
+                                  repo.delete()
+                                       │
+                                  REMOVED
 ```
 
 ```java
 @Transactional
 public void updateTrade(Long id) {
-    Trade trade = repo.findById(id).orElseThrow();  // trade is MANAGED
-    trade.setQuantity(200);                          // DIRTY CHECKING: JPA auto-detects change
-    // NO explicit save() needed!                    // Hibernate generates UPDATE at flush/commit
+    Trade t = repo.findById(id).orElseThrow();          // t is MANAGED
+    t.setQuantity(200);                                  // dirty checking — JPA detects the change
+    // NO explicit save() needed; UPDATE runs at flush/commit
 }
-// After transaction ends → trade becomes DETACHED
-// trade.setQuantity(300);  ← this change is LOST (not tracked anymore)
+// After tx ends, t is DETACHED — further changes are lost (not tracked).
 ```
 
-### 8. The N+1 Problem
+### 4.6 Spring Data repositories — methods from names
 
 ```java
-// PROBLEM:
+public interface TraderRepository extends JpaRepository<Trader, Long> {
+
+    // Spring parses the method name → generates SQL
+    List<Trader> findByDept(String dept);
+    Optional<Trader> findByEmail(String email);
+    List<Trader> findByDeptAndActive(String dept, boolean active);
+    long countByDept(String dept);
+
+    // Or write your own JPQL / native SQL
+    @Query("SELECT t FROM Trader t WHERE t.salary > :min")
+    List<Trader> earningOver(@Param("min") BigDecimal min);
+
+    @Query(value = "SELECT * FROM traders WHERE last_login < ?1", nativeQuery = true)
+    List<Trader> staleSince(LocalDateTime cutoff);
+
+    Page<Trader> findByDept(String dept, Pageable pageable);     // pagination
+}
+```
+
+Method-name parsing keywords: `findBy`, `existsBy`, `countBy`, `deleteBy`, with combinators `And`, `Or`, `Between`, `LessThan`, `GreaterThan`, `Like`, `In`, `OrderBy`. Once a name passes ~30 characters, prefer `@Query`.
+
+### 4.7 Caching — `@Cacheable`, `@CacheEvict`
+
+```java
+@SpringBootApplication
+@EnableCaching
+public class App { ... }
+
+@Service
+public class TradeService {
+    @Cacheable("trades")                                    // cache by method args
+    public Trade findById(Long id) { return repo.findById(id).orElseThrow(); }
+
+    @CachePut("trades")                                     // ALWAYS run, then update cache
+    public Trade update(Trade t) { return repo.save(t); }
+
+    @CacheEvict("trades")                                   // remove from cache
+    public void delete(Long id) { repo.deleteById(id); }
+
+    @CacheEvict(value = "trades", allEntries = true)        // wipe entire cache
+    @Scheduled(fixedRate = 3_600_000)
+    public void evictAll() {}
+}
+```
+
+Cache backends: in-memory `ConcurrentHashMap` (default), Caffeine (high-perf local), Redis (distributed), EhCache. Same annotations work with all of them.
+
+> ⚠ Same proxy trap as `@Transactional` and `@Async`: **self-invocation skips the cache**.
+
+---
+
+## 5. Going Deep — Interview-Level Material
+
+### 5.1 Spring AOP proxy mechanism
+
+Spring's AOP is **proxy-based**, not byte-code-weaving. Two strategies:
+
+```
+Caller ──▶ Proxy ──▶ Advice (Before/Around) ──▶ Target method ──▶ Advice (After) ──▶ Caller
+```
+
+| Proxy type | When | How |
+|---|---|---|
+| **JDK dynamic proxy** | Target implements at least one interface | Generated via `java.lang.reflect.Proxy` — implements the same interfaces |
+| **CGLIB proxy** | Target is a concrete class with no interfaces | Generated subclass extends the target — overrides each method |
+
+Spring Boot defaults to CGLIB (`spring.aop.proxy-target-class=true`). Plain Spring picks JDK first if interfaces are present.
+
+**Limits inherent to proxy-based AOP:**
+- Methods called via `this.method()` skip the proxy (§5.2).
+- `private` methods can't be advised (proxy can't intercept).
+- `final` methods can't be advised by CGLIB (subclass can't override).
+- `static` methods can't be advised.
+
+For these cases, **AspectJ load-time/compile-time weaving** can rewrite the bytecode itself — heavier setup but no proxy limitations.
+
+### 5.2 Self-invocation trap
+
+The single most common Spring gotcha:
+
+```java
+@Service
+public class OrderService {
+    @Transactional public void place(Order o) { /* tx */ }
+    @Cacheable("orders") public Order get(Long id) { /* cache */ }
+
+    public void batch(List<Order> orders) {
+        for (var o : orders) {
+            this.place(o);                               // ❌ direct call — NO transaction
+            // The proxy isn't in the path. `this` is the unwrapped instance.
+        }
+    }
+}
+```
+
+Three fixes:
+
+```java
+// 1. Inject self via Spring (the injected reference IS the proxy)
+@Service
+public class OrderService {
+    @Lazy @Autowired private OrderService self;
+    public void batch(List<Order> orders) {
+        for (var o : orders) self.place(o);              // proxy ✅
+    }
+}
+
+// 2. Use TransactionTemplate (programmatic, no annotation)
+@Service
+public class OrderService {
+    private final TransactionTemplate tx;
+    public void batch(List<Order> orders) {
+        for (var o : orders) tx.executeWithoutResult(s -> doPlace(o));
+    }
+}
+
+// 3. Restructure: extract the @Transactional call into a separate bean
+```
+
+Same trap applies to `@Async`, `@Cacheable`, `@PreAuthorize`, and any AOP-driven concern.
+
+### 5.3 Entity lifecycle + dirty checking
+
+The persistence context (PC) is JPA's first-level cache, lifecycle tracker, and "unit of work":
+
+- **Transient** — `new Trade()`. PC doesn't know about it.
+- **Managed (Persistent)** — loaded by `find`/`query` *or* explicitly `persist`-ed. PC tracks it.
+- **Detached** — once was managed; PC closed (transaction ended). Changes no longer tracked.
+- **Removed** — marked for deletion via `remove`/`delete`. Will be issued at flush.
+
+**Dirty checking.** Inside a transaction, JPA snapshots every loaded entity. At flush time (just before commit), it compares each managed entity to its snapshot — any field that changed is auto-issued as an UPDATE. **You don't call `save()` for changes to managed entities** — that's a frequent source of "why is my code calling save() everywhere" code smell.
+
+```java
+@Transactional
+public void rename(Long id, String newName) {
+    Trader t = repo.findById(id).orElseThrow();         // managed
+    t.setName(newName);                                  // dirty checking detects this
+    // tx commits → UPDATE traders SET name = ? WHERE id = ? AND version = ?
+}
+```
+
+### 5.4 The N+1 problem and three fixes
+
+```java
 @Entity
 public class Trader {
     @OneToMany(mappedBy = "trader", fetch = FetchType.LAZY)
     private List<Trade> trades;
 }
 
-// This code generates N+1 queries:
-List<Trader> traders = traderRepo.findAll();    // 1 query: SELECT * FROM traders
+// THE BUG
+List<Trader> traders = traderRepo.findAll();             // 1 query
 for (Trader t : traders) {
-    t.getTrades().size();                       // N queries: SELECT * FROM trades WHERE trader_id = ?
+    t.getTrades().size();                                 // ⚠ each call → SELECT … WHERE trader_id = ?
 }
-// 100 traders = 101 queries!
-
-// FIX 1: JOIN FETCH (JPQL)
-@Query("SELECT t FROM Trader t JOIN FETCH t.trades")
-List<Trader> findAllWithTrades();
-// 1 query with JOIN — loads everything at once
-
-// FIX 2: @EntityGraph
-@EntityGraph(attributePaths = {"trades"})
-List<Trader> findAll();
-// Tells JPA to eagerly fetch 'trades' for this specific query
-
-// FIX 3: Batch fetching
-@BatchSize(size = 25)  // on the collection
-// Loads trades in batches: WHERE trader_id IN (?, ?, ..., ?)
-// 100 traders = 1 + 4 queries (batches of 25)
+// 100 traders → 1 + 100 = 101 queries.
 ```
 
-### 9. Optimistic vs Pessimistic Locking
+Three fixes, in order of preference:
 
 ```java
-// OPTIMISTIC — version-based (no database locks, best for low contention)
+// FIX 1: JOIN FETCH (JPQL) — load everything in one query
+@Query("SELECT t FROM Trader t LEFT JOIN FETCH t.trades")
+List<Trader> findAllWithTrades();
+
+// FIX 2: @EntityGraph — declarative version
+@EntityGraph(attributePaths = "trades")
+List<Trader> findAll();
+
+// FIX 3: Batch fetching — load in batches of N instead of one-by-one
+@OneToMany(mappedBy = "trader")
+@BatchSize(size = 25)                                    // load trades for up to 25 traders at a time
+private List<Trade> trades;
+// 100 traders → 1 + 4 = 5 queries (4 batches of 25)
+```
+
+> 💡 **Detect N+1 in development with a SQL counting tool** (like `datasource-proxy` or Hibernate's `org.hibernate.SQL` + `org.hibernate.stat` logger). Catching N+1 at code review or in production is much more expensive than catching it in tests.
+
+### 5.5 Optimistic vs pessimistic locking
+
+```java
+// OPTIMISTIC — version-based, no DB locks. Best for low contention.
 @Entity
 public class Account {
-    @Version                                    // JPA manages this automatically
-    private Long version;
+    @Version private Long version;                        // JPA auto-increments on each update
     private BigDecimal balance;
 }
-// UPDATE accounts SET balance=?, version=version+1 WHERE id=? AND version=?
-// If version doesn't match → OptimisticLockException (someone else updated first)
-// Handle: retry the operation, or inform the user
+// On UPDATE, JPA generates: UPDATE accounts SET balance=?, version=version+1 WHERE id=? AND version=?
+// If 0 rows updated (someone else updated since you read) → throws OptimisticLockException
+// Handle: retry, or surface to user.
 
-// PESSIMISTIC — database-level lock (use for high contention)
-@Lock(LockModeType.PESSIMISTIC_WRITE)          // SELECT ... FOR UPDATE
-@Query("SELECT a FROM Account a WHERE a.id = :id")
-Optional<Account> findByIdForUpdate(@Param("id") Long id);
-// Blocks other transactions from reading/writing until lock is released
-// Use for: bank transfers, inventory reservation — can't afford lost updates
+// PESSIMISTIC — DB-level lock. Use for high contention.
+public interface AccountRepository extends JpaRepository<Account, Long> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)                 // SELECT ... FOR UPDATE
+    @Query("SELECT a FROM Account a WHERE a.id = :id")
+    Optional<Account> findByIdForUpdate(@Param("id") Long id);
+}
+// Blocks other transactions until lock is released. Use sparingly — high cost, deadlock risk.
 ```
 
-### 10. Transaction Propagation
+| | Optimistic | Pessimistic |
+|---|---|---|
+| Mechanism | `@Version` field check | DB row lock (`SELECT FOR UPDATE`) |
+| When | Low contention (most apps) | Genuine high contention (banking, inventory) |
+| Failure mode | Throws on conflict — caller retries | Blocks until lock released — risk of deadlock |
+| DB load | None extra | High |
 
-```java
-// REQUIRED (default) — join existing tx or create new
-@Transactional
-public void placeOrder(Order order) {
-    validateOrder(order);        // runs in SAME transaction
-    saveOrder(order);            // runs in SAME transaction
-    sendNotification(order);     // what if this needs its OWN transaction?
-}
+### 5.6 Transaction propagation — cross-link to [12](./12_spring_boot.md#51-transactional-propagation)
 
-// REQUIRES_NEW — always create new (suspend current)
-@Transactional(propagation = Propagation.REQUIRES_NEW)
-public void audit(String action) {
-    // Runs in a NEW transaction — committed even if caller's tx rolls back
-    // Use for: audit logs, notifications that MUST persist regardless
-}
+Already covered in detail in [12 §5.1](./12_spring_boot.md#51-transactional-propagation). The two everyday rules to remember in a `@Repository`/`@Service` context:
 
-// Example: transfer with independent audit
-@Transactional
-public void transfer(String from, String to, BigDecimal amount) {
-    debit(from, amount);         // same tx
-    credit(to, amount);          // same tx
-    audit("TRANSFER", from, to); // REQUIRES_NEW → saved even if transfer fails after this
-}
-```
-
-### 11. Spring Caching
-
-```java
-@EnableCaching                                   // on @Configuration class
-
-@Service
-public class TradeService {
-    
-    @Cacheable("trades")                         // cache result by method args
-    public Trade findById(Long id) {
-        return repo.findById(id).orElseThrow();  // DB hit only on cache miss
-    }
-    
-    @CachePut("trades")                          // always execute, update cache
-    public Trade updateTrade(Long id, Trade trade) {
-        return repo.save(trade);                 // updates DB AND cache
-    }
-    
-    @CacheEvict("trades")                        // remove from cache
-    public void deleteTrade(Long id) {
-        repo.deleteById(id);
-    }
-    
-    @CacheEvict(value = "trades", allEntries = true)  // clear entire cache
-    @Scheduled(fixedRate = 3600000)
-    public void evictAll() {}
-}
-
-// Cache backends:
-// Default: ConcurrentHashMap (in-memory, single JVM)
-// Production: Caffeine (high-perf local), Redis (distributed), EhCache
-```
+- `REQUIRED` (default) — join the existing tx if any, else create one.
+- `REQUIRES_NEW` — always run in a brand-new tx, suspending the caller's tx. Useful for audit logs or notifications that must persist regardless of the outer tx outcome.
 
 ---
 
-## Rapid-Fire Q&A — AOP
+## 6. Memory Aids
+
+### Decision tree: "this aspect / annotation isn't running"
+
+```
+Is it on a private/static/final method?
+├── Yes → can't be proxied. Refactor to public, non-static, non-final.
+└── No
+    ├── Is the bean injected via the container (not new'd)?
+    │   ├── Yes — proxy exists.
+    │   └── No → no proxy. Get it from the context.
+    └── Is the call going through `this.method()`?
+        ├── Yes → SELF-INVOCATION TRAP. Inject self / use template / restructure.
+        └── No → check pointcut expression matches; check @EnableX annotation present.
+```
+
+### "If they ask X, first think Y"
+
+| If they ask… | First think… | Then say… |
+|--------------|--------------|-----------|
+| "What's AOP?" | Cross-cutting concerns extracted | "Aspect = the rule. Pointcut = where it applies. Advice = the code that runs." |
+| "What's the proxy bypass?" | this.method() skips the proxy | "Inject self with @Lazy or restructure." |
+| "What's N+1?" | Lazy collection in a loop | "1 query for parents + N for children. Fix with JOIN FETCH or @EntityGraph." |
+| "Optimistic vs pessimistic?" | @Version vs FOR UPDATE | "Optimistic for low contention; pessimistic for high contention or strict ordering." |
+| "Why no save()?" | Dirty checking | "Managed entities auto-update at flush. save() is needed for new (transient) entities." |
+| "Around vs Before?" | Power vs simplicity | "Around can short-circuit, mutate args, mutate return, swallow throws. Before just runs." |
+| "How does Spring decide JDK vs CGLIB?" | Interfaces present? | "JDK if interfaces; CGLIB if concrete class. Boot defaults CGLIB." |
+
+### Three anchor pictures
+
+1. **The proxy intercepts every external call.** Self-invocation skips it.
+2. **JPA tracks managed entities.** Changes auto-update at commit; no `save()` needed for managed.
+3. **N+1 = lazy loop.** 1 parent query + N child queries. Always fix with JOIN FETCH or batch-size.
+
+---
+
+## 7. Cheat Sheet — Rapid-Fire Q&A
 
 ### Q1: What's AOP and what problem does it solve?
-**A:** Aspect-Oriented Programming separates cross-cutting concerns (logging, security, transactions, caching) from business logic. Without AOP, you'd scatter `log.info()` and `try/catch` through every service method. With AOP, you define it once in an aspect.
+**A:** Aspect-oriented programming separates cross-cutting concerns (logging, security, transactions, caching) from business logic. Define an aspect once, apply it via pointcut expressions to many methods. Spring AOP weaves at runtime via proxies; AspectJ can weave at compile/load time for finer control.
 
-### Q2: Key AOP terms?
-**A:** **Aspect**: the cross-cutting concern module. **JoinPoint**: a point in execution (method call, field access). **Pointcut**: expression selecting which JoinPoints to target. **Advice**: code that runs at a JoinPoint (before, after, around). **Weaving**: applying aspects to target objects.
+### Q2: Key AOP terminology?
+**A:** **Aspect** — class with cross-cutting code. **Join point** — a method call (in Spring AOP). **Pointcut** — expression selecting join points. **Advice** — the code that runs (`@Before`, `@After`, `@Around`). **Weaving** — combining advice with target (Spring: runtime proxy; AspectJ: compile/load time).
 
 ### Q3: Advice types?
-**A:** `@Before` — runs before method. `@After` — runs after (regardless of outcome). `@AfterReturning` — after successful return. `@AfterThrowing` — after exception. `@Around` — wraps method, you control `proceed()`. Around is most powerful but most dangerous.
+**A:** `@Before`, `@After` (always, like finally), `@AfterReturning` (success only), `@AfterThrowing` (failure only), `@Around` (wraps; you call `pjp.proceed()`). `@Around` is most powerful but easiest to break.
 
 ### Q4: How does Spring AOP work internally?
-**A:** Proxy-based. For interfaces: JDK dynamic proxy. For classes: CGLIB subclass proxy. The proxy intercepts calls and applies advice. **Limitation:** self-invocation (`this.method()`) bypasses the proxy — advice won't run. Same issue as `@Transactional`.
+**A:** Proxy-based. JDK dynamic proxy if target has interfaces; CGLIB subclass proxy otherwise. **Limit:** self-invocation (`this.method()`) bypasses the proxy. Also: private/static/final methods can't be advised (CGLIB can't override final; proxy can't intercept private).
 
 ### Q5: Pointcut expression examples?
-**A:** `execution(* com.citi.service.*.*(..))` — any method in service package. `@annotation(com.citi.Timed)` — methods annotated with `@Timed`. `within(com.citi.service..*)` — any class in service and sub-packages.
+**A:** `execution(* com.example.service.*.*(..))` — any method in service package. `@annotation(com.example.Timed)` — methods annotated `@Timed`. `within(com.example.service..*)` — any class in service tree. Combine with `&&`, `||`, `!`.
+
+### Q6: What's JPA? What's Hibernate? What's Spring Data?
+**A:** **JPA** — the spec (interfaces and annotations). **Hibernate** — the most common JPA *implementation*. **Spring Data JPA** — a layer on top that auto-generates repository implementations from interface definitions. Spring Boot `starter-data-jpa` brings all three.
+
+### Q7: Entity lifecycle states?
+**A:** Transient (new, untracked) → Managed (in persistence context, dirty-checked) → Detached (was managed; PC closed) → Removed (marked for deletion).
+
+### Q8: What's dirty checking?
+**A:** Inside a transaction, JPA snapshots managed entities at load. At flush time it compares each entity to its snapshot — changed fields auto-trigger UPDATE. **You don't call `save()` for managed entities** — that's a `@Repository` smell.
+
+### Q9: What's the N+1 problem?
+**A:** Loading a parent collection then iterating to access a lazy child collection causes 1 + N queries (1 for parents, N for child sets). Three fixes: `JOIN FETCH` JPQL, `@EntityGraph`, or `@BatchSize`.
+
+### Q10: Optimistic vs pessimistic locking?
+**A:** Optimistic — `@Version` field, JPA checks on UPDATE; throws `OptimisticLockException` on conflict. No DB locks. Pessimistic — `SELECT … FOR UPDATE` via `@Lock(LockModeType.PESSIMISTIC_WRITE)`. Database-level lock; blocks other transactions. Use optimistic for low contention; pessimistic for genuine high contention.
+
+### Q11: Spring Data query methods?
+**A:** Method-name parsing — `findByEmailAndActive(String, boolean)`. Custom JPQL via `@Query("SELECT u FROM User u WHERE …")`. Native SQL via `@Query(value = "SELECT * FROM users WHERE …", nativeQuery = true)`. Pagination via `Page<T> findByX(X x, Pageable p)`.
+
+### Q12: Transaction propagation summary?
+**A:** `REQUIRED` (default — join existing or create new), `REQUIRES_NEW` (always new, suspends current), `NESTED` (savepoint within current), `MANDATORY` (must have one), `SUPPORTS` / `NOT_SUPPORTED` / `NEVER`. Full table in [12 §5.1](./12_spring_boot.md#51-transactional-propagation).
+
+### Q13: Spring caching basics?
+**A:** `@EnableCaching`. `@Cacheable("name")` — cache method result by args. `@CachePut` — always run, update cache. `@CacheEvict` — remove. Backends: ConcurrentHashMap (default), Caffeine, Redis, EhCache. Same proxy bypass trap as `@Transactional`.
+
+### Q14: Why does `@Transactional` on a private method do nothing?
+**A:** The proxy can only intercept method calls dispatched through it. Private methods aren't visible to the proxy — calls go directly to the target object. Same reason for static and (in CGLIB) final methods.
+
+### Q15: How to detect N+1 in development?
+**A:** Hibernate SQL logger (`logging.level.org.hibernate.SQL=DEBUG`), `datasource-proxy` library counting queries per request, integration tests asserting `assertSelectCount`. Catching it in dev is much cheaper than catching it in production.
+
+### Q16: When is AspectJ better than Spring AOP?
+**A:** When you need to advise private / static / final methods, advise constructor calls, advise field access, or have a method-call frequency where proxy overhead matters. AspectJ weaves at compile/load time and rewrites bytecode — no proxies, no self-invocation trap. Setup is heavier; rare in standard Spring apps.
 
 ---
 
-## Rapid-Fire Q&A — Spring Data / JPA
+### Key Code Patterns
 
-### Q6: What's JPA? What's Hibernate?
-**A:** JPA = Java Persistence API — the specification (interfaces). Hibernate = the most common JPA implementation. Spring Data JPA = repository abstraction on top of JPA. You define `interface UserRepository extends JpaRepository<User, Long>` — Spring generates the implementation.
+**Around aspect with timing**
+```java
+@Around("@annotation(com.example.Timed)")
+public Object time(ProceedingJoinPoint p) throws Throwable {
+    long t = System.nanoTime();
+    try { return p.proceed(); }
+    finally { metrics.record(p.getSignature().toShortString(), System.nanoTime() - t); }
+}
+```
 
-### Q7: What's the N+1 problem?
-**A:** Lazy-loaded relationships execute 1 query for the parent + N queries for each child. E.g., load 100 orders, then 100 queries for items. Fix: `JOIN FETCH` in JPQL, `@EntityGraph`, or `FetchType.EAGER` (but eager has its own problems).
+**Spring Data repository**
+```java
+public interface UserRepo extends JpaRepository<User, Long> {
+    Optional<User> findByEmail(String email);
+    @EntityGraph(attributePaths = "roles")
+    List<User> findByDept(String dept);
+}
+```
 
-### Q8: `@Entity` lifecycle — managed, detached, transient?
-**A:** **Transient**: new object, not tracked. **Managed**: attached to persistence context, changes auto-flushed. **Detached**: was managed, but persistence context closed (e.g., after transaction ends). **Removed**: marked for deletion.
+**N+1 fix**
+```java
+@Query("SELECT t FROM Trader t LEFT JOIN FETCH t.trades")
+List<Trader> findAllWithTrades();
+```
 
-### Q9: Optimistic vs pessimistic locking in JPA?
-**A:** **Optimistic**: `@Version` field. On update, JPA checks version — if changed since read, throws `OptimisticLockException`. No database locks. Good for low-contention. **Pessimistic**: `@Lock(LockModeType.PESSIMISTIC_WRITE)` — database-level `SELECT FOR UPDATE`. Blocks other transactions. Use for high-contention.
-
-### Q10: Spring Data query methods?
-**A:** Method name → query: `findByEmailAndActive(String email, boolean active)`. Custom: `@Query("SELECT u FROM User u WHERE u.dept = :dept")`. Native: `@Query(value = "SELECT * FROM users WHERE...", nativeQuery = true)`. Pagination: `Page<User> findByDept(String dept, Pageable pageable)`.
-
-### Q11: Transaction propagation?
-**A:** `REQUIRED` (default): join existing tx or create new. `REQUIRES_NEW`: always new tx (suspends current). `SUPPORTS`: use existing if present, none otherwise. `MANDATORY`: must have existing tx. `NOT_SUPPORTED`: suspends current tx. `NEVER`: throws if tx exists.
-
-### Q12: What's Spring caching?
-**A:** `@Cacheable("users")` — caches return value by args. `@CacheEvict("users")` — clears cache. `@CachePut` — always runs method, updates cache. Backed by: ConcurrentHashMap (default), Caffeine, Redis, EhCache. `@EnableCaching` required.
+**Optimistic lock**
+```java
+@Version private Long version;
+// JPA: UPDATE … WHERE id = ? AND version = ?
+```
 
 ---
 
-## Can you answer these cold?
+## 8. Self-Test
 
-- [ ] AOP advice types — Before, After, AfterReturning, AfterThrowing, Around
-- [ ] Spring AOP proxy mechanism — why self-invocation doesn't work
-- [ ] N+1 problem — what it is, three fixes
-- [ ] Optimistic vs pessimistic locking — when each
-- [ ] Transaction propagation — REQUIRED vs REQUIRES_NEW
-- [ ] Spring caching — `@Cacheable`, `@CacheEvict`
+**Easy**
+- [ ] What's a pointcut? An advice?
+- [ ] What's the difference between `@Cacheable` and `@CachePut`?
+- [ ] What's a JPA entity?
+- [ ] What's `JpaRepository` give you?
 
-[← Back to Index](./00_INDEX.md)
+**Medium**
+- [ ] Walk through what happens when `@Transactional` is on a method called from inside the same class.
+- [ ] Show three fixes for N+1 with JPQL / annotations.
+- [ ] When is optimistic locking insufficient?
+- [ ] Why don't you need to call `save()` after modifying a managed entity?
+
+**Hard**
+- [ ] Write an `@Around` aspect that retries on `IOException` up to 3 times.
+- [ ] Why are private/static/final methods invisible to Spring AOP?
+- [ ] How would you detect N+1 in tests?
+- [ ] Show a transaction with `REQUIRES_NEW` for an audit log inside a `REQUIRED` outer tx that throws.
+- [ ] What happens at the SQL level when you mark an entity field with `@Version`?
+
+---
+
+## 9. Glossary (in plain English)
+
+| Term | Plain-English meaning |
+|------|----------------------|
+| **AOP** | Aspect-Oriented Programming — extract cross-cutting concerns into reusable aspects. |
+| **Aspect** | A class containing cross-cutting code. |
+| **Join point** | A method call (in Spring AOP). |
+| **Pointcut** | An expression picking the join points to advise. |
+| **Advice** | The code that runs at matched join points. |
+| **Weaving** | Combining advice with target — Spring uses runtime proxies. |
+| **Proxy** | Spring-generated wrapper around a bean that intercepts calls. |
+| **Self-invocation trap** | `this.method()` skips the proxy. |
+| **JPA** | Java Persistence API — the spec for ORM. |
+| **Hibernate** | Most common JPA implementation. |
+| **Spring Data JPA** | Repository abstraction layer over JPA. |
+| **Entity** | Java class mapped to a SQL table. |
+| **Persistence context** | JPA's first-level cache and unit of work for one transaction. |
+| **Managed entity** | Entity tracked by the persistence context (changes auto-flushed). |
+| **Detached entity** | Once managed, no longer tracked. |
+| **Dirty checking** | JPA's auto-detection of changes to managed entities. |
+| **N+1 problem** | One parent query + N child queries; the most common JPA performance bug. |
+| **Optimistic locking** | `@Version`-based; throws on conflict. |
+| **Pessimistic locking** | DB-level lock via `SELECT FOR UPDATE`. |
+| **`@Cacheable`** | Cache method return by args (proxy-based). |
+
+---
+
+[← All topics](./00_INDEX.md) · [📝 Doubts log](./doubts/14_spring_aop_data_doubts.md) · [← Prev: 13 Spring REST](./13_spring_rest.md) · [Next: 15 Kafka →](./15_kafka.md)
+
+[↑ Back to top](#14--spring-aop--data)

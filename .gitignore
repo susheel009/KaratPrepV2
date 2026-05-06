@@ -1,0 +1,24 @@
+# Claude AI settings
+.claude/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+target/
+build/
+*.class
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.local

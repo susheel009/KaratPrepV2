@@ -1,14 +1,28 @@
-# Debugging Problems — Practice Set
+# 17 — Debugging Problems (Practice Set)
 
-[← Back to Index](./00_INDEX.md) | [Bug Taxonomy Reference](./16_debugging.md)
-
-> **Instructions:** For each problem, follow the UMPIRE method:
-> 1. **Read** the code — state what it's supposed to do
-> 2. **Identify** the bug(s) — name the bug type from the taxonomy
-> 3. **Fix** the code — write corrected version in the answer space
-> 4. **Verify** — would your fix break any other behaviour?
+> [← All topics](./00_INDEX.md) · [📝 Doubts log](./doubts/17_debugging_problems_doubts.md) · [← Prev: 16 Debugging](./16_debugging.md)
 >
-> Leave your answers in the `Your Answer` sections. When ready, ask for evaluation.
+> **Priority:** 🔴 Practice · **Related topics:** [16 Bug taxonomy & debugging method](./16_debugging.md) · [01 Concurrency](./01_concurrency.md) · [02 Collections](./02_collections.md) · [05 Strings](./05_strings.md)
+
+## How to use this file
+
+This is a practice set, not a study file. The 9-section template doesn't apply — instead, work through the 20 problems below using the discipline from [16](./16_debugging.md).
+
+**For each problem, follow UMPIRE** (covered in [16 §5.1](./16_debugging.md#51-umpire-for-debugging-interview-cadence)):
+
+1. **U**nderstand — read the code, voice what it's supposed to do, state the data structures.
+2. **M**ap — read the failing scenario; state expected vs actual.
+3. **P**redict — name 2–3 suspicious lines *before* tracing.
+4. **I**nspect — dry-run the failing case line by line; voice variables; stop at the first divergence.
+5. **R**epair — state the fix in English, apply it, retrace the failing case, then trace another.
+6. **E**valuate — state the root-cause type using the bug taxonomy ([16 §4.2](./16_debugging.md#42-bug-taxonomy--11-named-types)).
+
+Write your answers inline in each `Your Answer` block. When you're ready for an evaluation, ask in chat.
+
+**Quick links:**
+- 🔍 [Bug taxonomy reference](./16_debugging.md#42-bug-taxonomy--11-named-types) — the 11 named bug types
+- 🎯 [Bug type coverage](#bug-type-coverage) — which problems cover which types
+- 📊 [Scoring guide](#scoring-guide-for-self-evaluation) — assess your readiness
 
 ---
 
@@ -613,7 +627,7 @@ public class PaymentService {
 
 ---
 
-## Scoring Guide (for self-evaluation)
+## Scoring guide (for self-evaluation)
 
 After attempting all 20, evaluate yourself:
 
@@ -633,7 +647,7 @@ After attempting all 20, evaluate yourself:
 
 ---
 
-## Bug Type Coverage
+## Bug type coverage
 
 | # | Bug Type | Problems |
 |:-:|----------|:--------:|
@@ -654,4 +668,8 @@ After attempting all 20, evaluate yourself:
 | 15 | DCL / volatile | 18 |
 | 16 | Volatile + atomicity | 2 |
 
-[← Back to Index](./00_INDEX.md)
+---
+
+[← All topics](./00_INDEX.md) · [📝 Doubts log](./doubts/17_debugging_problems_doubts.md) · [← Prev: 16 Debugging](./16_debugging.md)
+
+[↑ Back to top](#17--debugging-problems-practice-set)

@@ -1,15 +1,58 @@
 # Java Fundamentals — Complete Karat Interview Syllabus
 
 > **Purpose:** 100% coverage of Java fundamentals, Spring basics, and Kafka basics for Karat screening.
-> Each topic file contains: rapid-fire Q&A, deeper explanations, code snippets, and the "Definition → Mechanism → Implication" talk track format.
 
----
+## File structure (rewritten files)
+
+Each rewritten topic file follows this incremental order so you build intuition before code:
+
+1. **The Problem** — story-style, no code
+2. **Walkthrough** — concept + tiny example, pseudo-code only
+3. **First Code** — minimal working example, every non-obvious line commented
+4. **Build Up** — practical patterns, one at a time (problem → fix → why)
+5. **Going Deep** — interview-level material (memory model, JIT, edge cases)
+6. **Memory Aids** — mnemonics, decision trees, "if asked X, think Y"
+7. **Cheat Sheet** — rapid-fire Q&A for pre-interview review
+8. **Self-Test** — easy → medium → hard
+9. **Glossary** — plain-English definitions
 
 ## How to use
 
-1. **Rapid-fire drill:** Read each Q, cover the A, answer aloud in ≤30 seconds.
-2. **Deep-dive:** If you stumble, read the explanation below each Q&A.
-3. **Self-check:** Every file ends with a "can you answer these cold?" checklist.
+- **First pass (study):** read sections 1–4 in order, do the §8 self-test.
+- **Drill (recall):** cover the answers in §7, recite aloud in ≤30 seconds.
+- **15 min before interview:** §7 cheat sheet + §6 memory aids only.
+
+## Doubts workflow
+
+- Capture per-topic questions in `v2/doubts/<NN>_<topic>_doubts.md` (or run `/add-doubt <topic> <question>`).
+- Run `/update-files [topic]` to have study files rewritten using your doubts as the calibration signal — addressed doubts get marked `✅ addressed in study file (date)`.
+- Run `/push-doubts` to commit `v2/doubts/` and push to `origin/develop`.
+
+## Rewrite status
+
+All 17 files rewritten in the new template.
+
+| # | File | Status | Lines |
+|:-:|------|:--:|--:|
+| 01 | [01_concurrency.md](./01_concurrency.md) | ✅ | 1018 |
+| 02 | [02_collections.md](./02_collections.md) | ✅ | 659 |
+| 03 | [03_oop_language.md](./03_oop_language.md) | ✅ | 700 |
+| 04 | [04_exceptions.md](./04_exceptions.md) | ✅ | 586 |
+| 05 | [05_strings.md](./05_strings.md) | ✅ | 522 |
+| 06 | [06_java8_plus.md](./06_java8_plus.md) | ✅ | 593 |
+| 07 | [07_jvm.md](./07_jvm.md) | ✅ | 519 |
+| 08 | [08_design_patterns.md](./08_design_patterns.md) | ✅ | 618 |
+| 09 | [09_solid.md](./09_solid.md) | ✅ | 519 |
+| 10 | [10_testing.md](./10_testing.md) | ✅ | 660 |
+| 11 | [11_spring_core.md](./11_spring_core.md) | ✅ | 609 |
+| 12 | [12_spring_boot.md](./12_spring_boot.md) | ✅ | 690 |
+| 13 | [13_spring_rest.md](./13_spring_rest.md) | ✅ | 666 |
+| 14 | [14_spring_aop_data.md](./14_spring_aop_data.md) | ✅ | 693 |
+| 15 | [15_kafka.md](./15_kafka.md) | ✅ | 661 |
+| 16 | [16_debugging.md](./16_debugging.md) | ✅ | 632 |
+| 17 | [17_debugging_problems.md](./17_debugging_problems.md) | ✅ (practice set; nav header only) | 675 |
+
+> Note on 17: it's a 20-problem practice set, not a study file — it doesn't fit the 9-section template, so only the comprehensive nav header was added; the existing problems and scoring guide are preserved.
 
 ---
 
