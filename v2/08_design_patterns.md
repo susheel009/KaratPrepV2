@@ -1,45 +1,128 @@
 # 08 — Design Patterns
 
-[← Back to Index](./00_INDEX.md) | **Priority: 🟢 Medium**
+> [← All topics](./00_INDEX.md) · [📝 Doubts log](./doubts/08_design_patterns_doubts.md) · [← Prev: 07 JVM](./07_jvm.md) · [Next: 09 SOLID →](./09_solid.md)
+>
+> **Priority:** 🟢 Medium · **Related topics:** [09 SOLID](./09_solid.md) · [11 Spring Core](./11_spring_core.md) · [03 OOP](./03_oop_language.md)
+
+## Contents
+
+1. [The Problem](#1-the-problem-story-style-no-code) — why we need named recipes for code shapes
+2. [Walkthrough](#2-walkthrough-concept--tiny-example-pseudo-code-only) — Strategy via `Comparator`
+3. [First Code](#3-first-code-minimal-every-non-obvious-line-commented) — Strategy in 15 lines
+4. [Build Up — Practical Patterns](#4-build-up--practical-patterns)
+   - [4.1 Singleton](#41-singleton--exactly-one-instance)
+   - [4.2 Factory & Abstract Factory](#42-factory-method-and-abstract-factory)
+   - [4.3 Builder](#43-builder--complex-construction-step-by-step)
+   - [4.4 Strategy](#44-strategy--swap-algorithms-at-runtime)
+   - [4.5 Observer](#45-observer--one-to-many-event-notification)
+   - [4.6 Proxy](#46-proxy--control-access-or-add-cross-cutting-behaviour)
+   - [4.7 Decorator](#47-decorator--add-features-by-wrapping)
+   - [4.8 Adapter](#48-adapter--bridge-incompatible-interfaces)
+   - [4.9 Template Method](#49-template-method--algorithm-skeleton-with-pluggable-steps)
+5. [Going Deep — Interview-Level Material](#5-going-deep--interview-level-material)
+   - [5.1 When patterns are over-engineering](#51-when-patterns-are-over-engineering)
+   - [5.2 How Spring uses them](#52-how-spring-uses-the-patterns-internally)
+   - [5.3 Modern Java replacements](#53-modern-java-replacements-for-old-pattern-boilerplate)
+   - [5.4 Patterns that combine](#54-patterns-that-combine)
+6. [Memory Aids](#6-memory-aids)
+7. [Cheat Sheet — Rapid-Fire Q&A](#7-cheat-sheet--rapid-fire-qa)
+8. [Self-Test](#8-self-test)
+9. [Glossary (in plain English)](#9-glossary-in-plain-english)
+
+> **15 minutes before the interview?** Skip to [§7 Cheat Sheet](#7-cheat-sheet--rapid-fire-qa) and [§6 Memory Aids](#6-memory-aids).
 
 ---
 
-## 🟢 Start Here — Design Patterns in Plain English
+## 1. The Problem (story-style, no code)
 
-### What are design patterns?
+Imagine you're a chef opening a new restaurant. You hire five other chefs. None of them have ever cooked your menu before. On day one, every chef invents their own way to:
 
-Design patterns are **proven solutions to common problems**. They're like recipes — you don't invent a new way to make pasta every time. Someone figured out the best way, wrote it down, and now everyone uses it.
+- chop an onion
+- plate a salad
+- communicate with the dishwasher
+- handle a cancelled order
 
-### The patterns you need to know (in one sentence each)
+By dinner service, the kitchen is chaos. Five techniques for the same outcome, none documented, each chef thinks the others are doing it wrong.
 
-| Pattern | One-sentence explanation | Real-life analogy |
-|---------|------------------------|-------------------|
-| **Singleton** | Only one instance of a class exists in your entire app | There's only one president at a time |
-| **Factory** | A method creates the right object for you based on input | A pizza shop: you say "pepperoni" → they make the right pizza |
-| **Builder** | Build a complex object step by step | Ordering a custom sandwich: bread → meat → cheese → sauce → done |
-| **Strategy** | Swap out different algorithms without changing the rest | GPS navigation: pick "fastest route", "shortest", or "avoid tolls" — same destination, different approach |
-| **Observer** | When something changes, notify everyone interested | YouTube subscriptions: when a channel uploads, all subscribers get notified |
-| **Proxy** | A stand-in that controls access to the real thing | A receptionist who screens calls before putting you through to the boss |
-| **Decorator** | Add features by wrapping objects | Plain coffee → add milk (wrapper) → add sugar (wrapper) → add whipped cream (wrapper) |
-| **Adapter** | Make incompatible things work together | A power plug adapter when you travel abroad |
-| **Template Method** | Define the recipe steps, let subclasses fill in the details | A job application form: the structure is fixed (name, experience, education) but each person fills it in differently |
+The next morning you write a small **recipe book** — not the food recipes, but the *kitchen-process* recipes. "When two chefs need the same fryer, here's how they coordinate." "When you finish a dish, here's how you signal the runner." Each recipe has a name, a stated problem it solves, and the canonical solution. Now when one chef says to another *"use the call-back recipe"*, everybody knows exactly what to do.
 
-### Why do they matter?
+That's a **design pattern**. Not a snippet of code, not a library — a **named, reusable solution to a recurring problem**. The Gang of Four book (1994) catalogued the dozen-or-so most common ones in OOP code. Decades later, you'll still hear engineers say "we used a Strategy here", "Spring builds beans via Factory", "wrap that with a Decorator" — and the listener immediately understands.
 
-Without patterns, every developer invents their own way to solve the same problem — leading to messy, inconsistent code that's hard for others to understand. Patterns give you a **shared vocabulary**: when you say "we used the Strategy pattern," everyone knows exactly what you mean.
+The patterns you'll be asked about in interviews divide into three rough buckets:
 
-> Key takeaway: Design patterns are named solutions to common problems. You don't need to memorise every detail — understand the *intent* (what problem it solves) and *when to use it*.
+- **Creational** — recipes for *making* objects: Singleton (only one), Factory (decide which subtype), Builder (assemble step by step).
+- **Structural** — recipes for *combining* objects: Proxy (stand-in), Decorator (wrap to add features), Adapter (bridge two incompatible APIs).
+- **Behavioural** — recipes for *interaction*: Strategy (swap algorithm), Observer (broadcast events), Template Method (parent defines the steps, child fills the blanks).
+
+> Once you can name the problem each pattern solves, you can read any modern Java codebase like a recipe book — Spring, JDK I/O, Servlets, and most Spring Boot starters are built almost entirely from these.
 
 ---
 
-## 📚 Study Material
+## 2. Walkthrough (concept + tiny example, pseudo-code only)
 
-### 1. Singleton — One Instance, Global Access
+A list of `Employee` objects. Sort them sometimes by name, sometimes by salary, sometimes by start date. Without a pattern, you'd write three different sort methods.
 
-**Intent:** Ensure a class has exactly one instance with a global access point.
+With **Strategy**, you write **one** sort and pass in the comparison rule:
+
+```
+sort(employees, "first by name")             // strategy = a function(a, b) -> compare names
+sort(employees, "first by salary descending")// strategy = a function(a, b) -> compare salaries reversed
+sort(employees, "first by hire date")        // strategy = a function(a, b) -> compare dates
+```
+
+The function-that-compares **is** the strategy. The sort algorithm doesn't change. Different strategies in, different orderings out.
+
+Two takeaways the walkthrough makes obvious:
+
+1. The **strategy is a value** — passed in as an argument, swappable at runtime.
+2. The **caller picks**, not the algorithm. The algorithm is open for new orderings without modification.
+
+In Java, `Comparator` *is* the Strategy interface, and lambdas make passing one in trivial. Now the actual code.
+
+---
+
+## 3. First Code (minimal, every non-obvious line commented)
 
 ```java
-// BEST: Enum singleton — thread-safe, serialisation-safe, simple
+import java.util.*;
+import java.util.function.*;
+
+public class StrategyDemo {
+    record Employee(String name, double salary, String dept) {}
+
+    public static void main(String[] args) {
+        var employees = new ArrayList<>(List.of(
+            new Employee("Bob",   60_000, "ENG"),
+            new Employee("Alice", 90_000, "ENG"),
+            new Employee("Carol", 75_000, "PR")
+        ));
+
+        // STRATEGY = a Comparator. Pass a different one for a different ordering.
+        Comparator<Employee> byName     = Comparator.comparing(Employee::name);
+        Comparator<Employee> bySalary   = Comparator.comparingDouble(Employee::salary).reversed();
+        Comparator<Employee> byDeptThenName =
+            Comparator.comparing(Employee::dept).thenComparing(Employee::name);
+
+        // SAME sort algorithm, three different strategies → three different results.
+        employees.sort(byName);            System.out.println(employees);
+        employees.sort(bySalary);          System.out.println(employees);
+        employees.sort(byDeptThenName);    System.out.println(employees);
+    }
+}
+```
+
+What just happened: `List.sort` doesn't know whether you're ordering by name, salary, or hire date — it just calls the strategy you passed. Each `Comparator` is a tiny value-typed strategy. To add a new ordering, write a new comparator. **No modification to the sorting code.**
+
+---
+
+## 4. Build Up — Practical Patterns
+
+### 4.1 Singleton — exactly one instance
+
+**Intent:** ensure a class has exactly one instance with a global access point.
+
+```java
+// BEST — enum singleton (thread-safe, serialisation-safe, no boilerplate)
 public enum AppConfig {
     INSTANCE;
     private final Properties props = loadProps();
@@ -47,61 +130,58 @@ public enum AppConfig {
 }
 AppConfig.INSTANCE.get("db.url");
 
-// Double-Checked Locking (when enum isn't possible, e.g., inheritance)
+// When enum isn't possible — Double-Checked Locking (DCL) with volatile
 public class ConnectionPool {
-    private static volatile ConnectionPool instance;    // volatile prevents partial construction
-    private ConnectionPool() { /* init pool */ }
-    
+    private static volatile ConnectionPool instance;        // volatile is REQUIRED — see [01 §5.1]
+    private ConnectionPool() {}
     public static ConnectionPool getInstance() {
-        if (instance == null) {                         // 1st check — no lock (fast path)
+        ConnectionPool local = instance;
+        if (local == null) {
             synchronized (ConnectionPool.class) {
-                if (instance == null) {                 // 2nd check — under lock
-                    instance = new ConnectionPool();
-                }
+                local = instance;
+                if (local == null) instance = local = new ConnectionPool();
             }
         }
-        return instance;
+        return local;
     }
 }
-
-// ⚠️ Singleton = global state → hard to test (can't inject mock)
-// Prefer: dependency injection (Spring manages singletons for you)
 ```
 
-### 2. Factory Method — Decouple Creation
+> ⚠ Singletons are global state. They're hard to test (you can't inject a mock), they outlive method scope, and they couple unrelated code through their shared instance. **In a Spring app, prefer a Spring-managed bean (default scope is singleton anyway) injected via DI** — you get the same one-instance guarantee plus testability.
 
-**Intent:** Define an interface for creating objects, let subclasses decide which class to instantiate.
+### 4.2 Factory Method and Abstract Factory
+
+**Factory Method** — a method that decides which subclass to instantiate based on input.
 
 ```java
-// Simple factory (most common in practice)
 public class NotificationFactory {
     public static Notification create(String type) {
         return switch (type) {
             case "EMAIL" -> new EmailNotification();
             case "SMS"   -> new SmsNotification();
             case "PUSH"  -> new PushNotification();
-            default -> throw new IllegalArgumentException("Unknown: " + type);
+            default      -> throw new IllegalArgumentException("Unknown: " + type);
         };
     }
 }
-
-// Abstract Factory — family of related objects
-public interface UIFactory {
-    Button createButton();       // each factory creates a consistent family
-    Checkbox createCheckbox();
-}
-public class DarkThemeFactory implements UIFactory {
-    public Button createButton() { return new DarkButton(); }
-    public Checkbox createCheckbox() { return new DarkCheckbox(); }
-}
-// Use when: you need to create groups of related objects that must be consistent
 ```
 
-**In the wild:** `Calendar.getInstance()`, `NumberFormat.getInstance()`, `DriverManager.getConnection()`.
+**Abstract Factory** — an interface for creating *families* of related objects.
 
-### 3. Builder — Complex Object Construction
+```java
+public interface UIFactory {
+    Button   createButton();
+    Checkbox createCheckbox();
+}
+public class DarkThemeFactory  implements UIFactory { /* dark variants */ }
+public class LightThemeFactory implements UIFactory { /* light variants */ }
+```
 
-**Intent:** Separate construction of a complex object from its representation.
+**In the wild:** `Calendar.getInstance()`, `NumberFormat.getInstance()`, `DriverManager.getConnection()`, every Spring `@Bean` method.
+
+### 4.3 Builder — complex construction step by step
+
+**Intent:** separate the construction of a complex object from its representation, especially when there are many optional parameters.
 
 ```java
 public class TradeOrder {
@@ -109,27 +189,22 @@ public class TradeOrder {
     private final int quantity;        // required
     private final BigDecimal price;    // optional
     private final String notes;        // optional
-    
+
     private TradeOrder(Builder b) {
-        this.symbol = b.symbol;
-        this.quantity = b.quantity;
-        this.price = b.price;
-        this.notes = b.notes;
+        this.symbol = b.symbol; this.quantity = b.quantity;
+        this.price  = b.price;  this.notes    = b.notes;
     }
-    
+
     public static class Builder {
-        private final String symbol;           // required — in constructor
-        private final int quantity;            // required — in constructor
-        private BigDecimal price;              // optional — via setter
-        private String notes;                  // optional — via setter
-        
+        private final String symbol;
+        private final int quantity;
+        private BigDecimal price;
+        private String notes;
         public Builder(String symbol, int quantity) {
-            this.symbol = symbol;
-            this.quantity = quantity;
+            this.symbol = symbol; this.quantity = quantity;
         }
-        public Builder price(BigDecimal p)  { this.price = p; return this; }   // fluent
-        public Builder notes(String n)      { this.notes = n; return this; }
-        
+        public Builder price(BigDecimal p) { this.price = p; return this; }    // fluent
+        public Builder notes(String n)     { this.notes = n; return this; }
         public TradeOrder build() {
             // validate here
             return new TradeOrder(this);
@@ -137,246 +212,407 @@ public class TradeOrder {
     }
 }
 
-TradeOrder order = new TradeOrder.Builder("AAPL", 100)
+TradeOrder o = new TradeOrder.Builder("AAPL", 100)
     .price(new BigDecimal("150.50"))
     .notes("Market order")
     .build();
-
-// Lombok shortcut: @Builder on the class generates all of this
 ```
 
-### 4. Strategy — Swap Algorithms at Runtime
+> 💡 Lombok's `@Builder` generates this for you. Java 16+ records *don't* eliminate the use case — records have a single canonical constructor; Builder is still useful for many optional parameters.
 
-**Intent:** Define a family of algorithms, encapsulate each, make them interchangeable.
+### 4.4 Strategy — swap algorithms at runtime
+
+**Intent:** define a family of interchangeable algorithms, encapsulated behind a common interface.
 
 ```java
-// Traditional approach
-public interface PricingStrategy {
-    BigDecimal calculatePrice(Trade trade);
-}
-public class StandardPricing implements PricingStrategy { /* ... */ }
-public class VIPPricing implements PricingStrategy { /* ... */ }
+public interface PricingStrategy { BigDecimal price(Trade t); }
+public class StandardPricing implements PricingStrategy { /* … */ }
+public class VipPricing      implements PricingStrategy { /* … */ }
 
 public class TradingEngine {
-    private final PricingStrategy pricing;                    // injected — swappable
+    private final PricingStrategy pricing;                // injected — swappable
     public TradingEngine(PricingStrategy pricing) { this.pricing = pricing; }
-    public BigDecimal quote(Trade trade) { return pricing.calculatePrice(trade); }
+    public BigDecimal quote(Trade t) { return pricing.price(t); }
 }
 
-// Modern Java — lambdas replace single-method strategy classes
-public class TradingEngine {
-    private final Function<Trade, BigDecimal> pricingFn;     // lambda = strategy
-    public TradingEngine(Function<Trade, BigDecimal> pricingFn) { this.pricingFn = pricingFn; }
+// Modern Java — for single-method interfaces, lambdas replace strategy classes:
+public class TradingEngineLambda {
+    private final Function<Trade, BigDecimal> pricingFn;
+    public TradingEngineLambda(Function<Trade, BigDecimal> fn) { this.pricingFn = fn; }
 }
-new TradingEngine(trade -> trade.getAmount().multiply(new BigDecimal("1.01")));  // inline strategy
-
-// JDK example: Comparator IS the strategy pattern
-list.sort(Comparator.comparing(Employee::getName));          // strategy as lambda
-list.sort(Comparator.comparing(Employee::getSalary).reversed());
+new TradingEngineLambda(t -> t.amount().multiply(new BigDecimal("1.01")));
 ```
 
-### 5. Observer — Event-Driven Notification
+**`Comparator` IS the Strategy pattern.** So is `Predicate`, `Function`, `Runnable`, `AuthenticationProvider`.
 
-**Intent:** One-to-many dependency — when one object changes, all dependents are notified.
+### 4.5 Observer — one-to-many event notification
+
+**Intent:** when one object's state changes, all dependents are notified.
 
 ```java
-// Spring's ApplicationEvent — observer pattern built-in
+// Spring's ApplicationEvent — Observer baked in
 public class TradeExecutedEvent extends ApplicationEvent {
     private final Trade trade;
-    public TradeExecutedEvent(Object source, Trade trade) {
-        super(source);
-        this.trade = trade;
-    }
+    public TradeExecutedEvent(Object source, Trade trade) { super(source); this.trade = trade; }
+    public Trade getTrade() { return trade; }
 }
 
-// Publisher (subject)
 @Service
 public class TradingService {
     @Autowired private ApplicationEventPublisher publisher;
-    
-    public void execute(Trade trade) {
-        // ... execute trade ...
-        publisher.publishEvent(new TradeExecutedEvent(this, trade));  // notify observers
+    public void execute(Trade t) {
+        // ... execute ...
+        publisher.publishEvent(new TradeExecutedEvent(this, t));
     }
 }
 
-// Observer (listener) — decoupled, doesn't know about TradingService
 @Component
 public class AuditListener {
-    @EventListener
-    public void onTradeExecuted(TradeExecutedEvent event) {
-        auditLog.record(event.getTrade());    // reacts to event
-    }
+    @EventListener public void onExec(TradeExecutedEvent e) { auditLog.record(e.getTrade()); }
 }
 
-// Multiple listeners can react independently — full decoupling
+@Component
+public class SettlementListener {
+    @EventListener public void onExec(TradeExecutedEvent e) { settlement.queue(e.getTrade()); }
+}
+// Multiple listeners react independently — fully decoupled from TradingService.
 ```
 
-### 6. Proxy — Control Access
+> 💡 Spring's listener model handles thread context (sync by default, `@Async` for asynchronous) and ordering (`@Order`) — all the ceremony of a hand-rolled Observer disappears.
 
-**Intent:** Provide a surrogate for another object to control access.
+### 4.6 Proxy — control access or add cross-cutting behaviour
+
+**Intent:** provide a stand-in for another object to control access or add behaviour around its calls.
 
 ```java
-// Spring uses proxies for @Transactional, @Cacheable, @Async, @Secured
-// You call → Proxy intercepts → adds behaviour → delegates to real object
-
 @Service
 public class PaymentService {
-    @Transactional                         // Spring wraps this class in a CGLIB proxy
-    public void processPayment(Payment p) {
-        // Proxy starts transaction BEFORE this method
+    @Transactional                                   // ← Spring wraps this class in a CGLIB proxy
+    public void pay(Payment p) {
+        // The proxy starts a transaction BEFORE the call,
+        // commits AFTER (or rolls back on RuntimeException).
         repository.save(p);
-        // Proxy commits transaction AFTER this method (or rolls back on exception)
     }
 }
+```
 
-// ⚠️ Self-invocation bypasses the proxy:
+The caller calls `paymentService.pay(p)`. They don't see the proxy. The proxy intercepts, opens the transaction, calls the real method, commits.
+
+> ⚠ **Self-invocation skips the proxy.** Calls via `this.method()` go directly to the implementation, bypassing all proxy logic:
+
+```java
 @Service
 public class OrderService {
-    @Transactional
-    public void placeOrder(Order o) { /* has transaction */ }
-    
+    @Transactional public void placeOrder(Order o) { /* … */ }
     public void batchProcess(List<Order> orders) {
         for (Order o : orders) {
-            this.placeOrder(o);            // ❌ calls directly — NO proxy, NO transaction
+            this.placeOrder(o);            // ❌ NO transaction — proxy bypassed
         }
     }
 }
-// Fix: inject self, or use TransactionTemplate, or restructure
 ```
 
-### 7. Decorator — Add Behaviour by Wrapping
+Fix: inject self via `@Autowired`, use `TransactionTemplate`, or restructure so the call crosses a proxy boundary. See [14 Spring AOP & Data](./14_spring_aop_data.md).
 
-**Intent:** Attach additional responsibilities dynamically by wrapping.
+### 4.7 Decorator — add features by wrapping
+
+**Intent:** attach additional behaviour to an object dynamically by wrapping it in another object that implements the same interface.
 
 ```java
-// Java I/O — classic decorator chain
-InputStream raw = new FileInputStream("data.csv");          // raw bytes
+// Java I/O is the canonical Decorator chain:
+InputStream raw      = new FileInputStream("data.csv");      // raw bytes
 InputStream buffered = new BufferedInputStream(raw);         // + buffering
-InputStream data = new DataInputStream(buffered);           // + typed reading
-// Each wrapper adds a layer without modifying the inner stream
+DataInputStream data = new DataInputStream(buffered);        // + typed reads
+// Each wrapper IS-A InputStream, HAS-A InputStream, adds one capability.
 
 // Custom decorator
-public interface TradeValidator {
-    boolean validate(Trade trade);
-}
-public class BaseValidator implements TradeValidator { /* core validation */ }
+public interface TradeValidator { boolean valid(Trade t); }
+public class BaseValidator implements TradeValidator { /* core checks */ }
 public class LoggingValidator implements TradeValidator {
     private final TradeValidator inner;
     public LoggingValidator(TradeValidator inner) { this.inner = inner; }
-    public boolean validate(Trade trade) {
-        log.info("Validating: {}", trade);
-        boolean result = inner.validate(trade);              // delegate
-        log.info("Result: {}", result);
-        return result;
+    public boolean valid(Trade t) {
+        log.info("validating: {}", t);
+        boolean r = inner.valid(t);
+        log.info("result: {}", r);
+        return r;
     }
 }
-// new LoggingValidator(new BaseValidator()) — added logging without modifying BaseValidator
+TradeValidator chain = new LoggingValidator(new BaseValidator());
 ```
 
-### 8. Adapter — Bridge Incompatible Interfaces
+Decorator and Proxy look similar in code — the difference is intent. **Proxy controls access (or adds invisible cross-cutting concerns).** **Decorator adds visible new capabilities** that callers may opt in or out of.
 
-**Intent:** Convert one interface to another that the client expects.
+### 4.8 Adapter — bridge incompatible interfaces
+
+**Intent:** convert one interface to another that the client expects.
 
 ```java
-// Legacy system returns XML, your code expects domain objects
-public class LegacyTradeSystemAdapter implements TradeProvider {
-    private final LegacyXmlTradeService legacy;   // adaptee (old interface)
-    
-    @Override
-    public List<Trade> getTrades(LocalDate date) {
-        XmlResponse xml = legacy.fetchTrades(date.toString());  // call old system
-        return xml.getRecords().stream()
-            .map(this::convertXmlToTrade)                       // convert to new model
-            .toList();
+// You expect TradeProvider; the legacy system returns XmlResponse
+public interface TradeProvider { List<Trade> getTrades(LocalDate date); }
+
+public class LegacyTradeAdapter implements TradeProvider {
+    private final LegacyXmlTradeService legacy;             // adaptee
+    public LegacyTradeAdapter(LegacyXmlTradeService legacy) { this.legacy = legacy; }
+
+    @Override public List<Trade> getTrades(LocalDate date) {
+        XmlResponse xml = legacy.fetchTrades(date.toString());
+        return xml.records().stream().map(this::toTrade).toList();
     }
+    private Trade toTrade(XmlRecord r) { /* … */ }
 }
-// Client code uses TradeProvider interface — doesn't know about legacy XML system
 ```
 
-### 9. Template Method — Algorithm Skeleton
+`Arrays.asList(arr)` is a tiny adapter — turns a `T[]` into a `List<T>` view. Spring's `HandlerAdapter` adapts varied controller types (annotation-based, functional, legacy) to the common `DispatcherServlet` invocation contract.
 
-**Intent:** Define the skeleton of an algorithm; subclasses fill in steps.
+### 4.9 Template Method — algorithm skeleton with pluggable steps
+
+**Intent:** define the skeleton of an algorithm in a base class, defer specific steps to subclasses.
 
 ```java
 public abstract class ReportGenerator {
-    // Template method — defines the algorithm
+    // The TEMPLATE METHOD — public final, defines the algorithm.
     public final Report generate() {
-        var data = fetchData();             // step 1: subclass provides
-        var formatted = format(data);       // step 2: subclass provides
-        validate(formatted);                // step 3: shared implementation
-        return export(formatted);           // step 4: subclass provides
+        var data = fetchData();              // step 1
+        var formatted = format(data);        // step 2
+        validate(formatted);                 // step 3 — shared default, subclass may override
+        return export(formatted);            // step 4
     }
-    
     protected abstract Object fetchData();
     protected abstract Object format(Object data);
     protected abstract Report export(Object formatted);
-    
-    protected void validate(Object data) {   // default implementation — can be overridden
-        if (data == null) throw new IllegalStateException("No data");
+    protected void validate(Object data) {
+        if (data == null) throw new IllegalStateException();
     }
 }
 
 public class PdfReport extends ReportGenerator {
-    protected Object fetchData() { return db.query("..."); }
-    protected Object format(Object data) { return formatAsPdf(data); }
-    protected Report export(Object formatted) { return savePdf(formatted); }
+    protected Object fetchData()                 { return db.query("..."); }
+    protected Object format(Object data)         { return formatAsPdf(data); }
+    protected Report export(Object formatted)    { return savePdf(formatted); }
 }
 ```
 
-### Quick Reference — When to Use Each
-
-| Pattern | When | JDK/Spring Example |
-|---------|------|-------------------|
-| Singleton | Exactly one instance needed | `Runtime.getRuntime()`, Spring beans (default scope) |
-| Factory | Decouple creation from usage | `Calendar.getInstance()`, `DriverManager.getConnection()` |
-| Builder | Many constructor parameters | `StringBuilder`, `Stream.Builder`, Lombok `@Builder` |
-| Strategy | Swap algorithms at runtime | `Comparator`, `Predicate`, Spring `AuthenticationProvider` |
-| Observer | React to events (decouple) | `ApplicationEventPublisher`, `PropertyChangeListener` |
-| Proxy | Add cross-cutting behaviour | Spring AOP, `@Transactional`, `@Cacheable` |
-| Decorator | Layer additional behaviour | Java I/O streams, `Collections.unmodifiableList()` |
-| Adapter | Bridge old and new interfaces | `Arrays.asList()`, Spring `HandlerAdapter` |
-| Template Method | Algorithm skeleton + custom steps | `AbstractList`, `HttpServlet.doGet()` |
+**`HttpServlet` is the Template Method pattern:** `service()` is the template, dispatching to `doGet`, `doPost`, etc.
 
 ---
 
-## Rapid-Fire Q&A
+## 5. Going Deep — Interview-Level Material
+
+### 5.1 When patterns are over-engineering
+
+A pattern is overhead — extra interface, extra class, extra indirection. Worth the cost only when:
+
+- The variation is **real**, not hypothetical. Two implementations actually exist (or will, on a known timeline).
+- The **swap point** is genuine. If you'll never have a different `OrderRepository`, the interface is noise.
+- The team understands the pattern. An unrecognised pattern looks like ceremony.
+
+A common anti-pattern: introducing Strategy or Factory at the first sign of an `if/else`. Three branches and a stable list of known cases is *not* a Strategy candidate — a switch expression is clearer. Reach for the pattern when (a) the list grows, (b) the branches need to be added by other modules, or (c) testing requires injection.
+
+### 5.2 How Spring uses the patterns internally
+
+| Pattern | Where in Spring |
+|---|---|
+| **Singleton** | Default bean scope. One instance per `ApplicationContext`. |
+| **Factory** | `BeanFactory` — every `@Bean` method *is* a factory. `FactoryBean<T>` interface for advanced cases. |
+| **Builder** | `WebClient.builder()`, `MockMvcBuilders`, fluent test setup. |
+| **Strategy** | `AuthenticationProvider`, `MessageConverter`, `HandlerInterceptor`. |
+| **Observer** | `ApplicationEventPublisher` + `@EventListener`. |
+| **Proxy** | All AOP-driven concerns: `@Transactional`, `@Cacheable`, `@Async`, `@PreAuthorize`. |
+| **Decorator** | `WebRequest`/`HandlerWrapper` patterns; `Filter` chains. |
+| **Adapter** | `HandlerAdapter` (annotated controllers / functional / legacy → unified invocation). |
+| **Template Method** | `JdbcTemplate`, `RedisTemplate`, `RestTemplate` (now `RestClient`/`WebClient`), `JmsTemplate`. |
+
+### 5.3 Modern Java replacements for old pattern boilerplate
+
+A surprising number of GoF patterns shrink to nearly nothing in modern Java:
+
+| Pattern | Modern shortcut |
+|---|---|
+| Strategy with single-method interface | A lambda. `Comparator.comparing(Employee::name)`. |
+| Builder | `record` + compact constructor for the simple cases; Lombok `@Builder` for the full thing. |
+| Observer | Spring `@EventListener` (or Reactor `Flux`/`Mono` for streams). |
+| Singleton | `enum Singleton { INSTANCE; }` or a Spring bean. |
+| Factory | `Supplier<T>` + lambda; or a Spring `@Bean` method. |
+| Iterator | `Iterable.forEach`, streams, enhanced for-loops. |
+
+The patterns themselves haven't gone away — the *boilerplate* of expressing them has.
+
+### 5.4 Patterns that combine
+
+Real systems compose patterns:
+
+- **Spring `JdbcTemplate`** — Template Method for the algorithm skeleton (acquire connection → execute → release), Strategy injected as the lambda doing the actual SQL work. Often invoked through a Decorator (transactions) and a Proxy.
+- **Java I/O** — Decorator chains (FileInputStream → BufferedInputStream → DataInputStream), often built by a Factory (`Files.newBufferedReader`).
+- **Servlet filters** — Chain of Responsibility (each filter calls `chain.doFilter` to delegate) which is essentially a runtime Decorator pipeline.
+
+When you read complex modern Java code, **identifying the patterns is what makes it readable**. "Oh, that's a strategy." "That's a decorator chain." "That's a proxy adding cross-cutting concerns." The vocabulary collapses an apparent maze into recognisable shapes.
+
+---
+
+## 6. Memory Aids
+
+### Decision tree: "I have an `if/else` chain on type — what now?"
+
+```
+How many branches and how often will the list change?
+├── 2-3, stable list, all in the same package → keep the if/else (or switch expression).
+├── Many, or list grows from outside this module → STRATEGY.
+└── The branches CONSTRUCT different objects, not just choose behaviour → FACTORY.
+```
+
+### "If they ask X, first think Y"
+
+| If they ask… | First think… | Then say… |
+|--------------|--------------|-----------|
+| "How would you implement Singleton?" | enum or DCL | "Best is `enum INSTANCE`. If not possible, double-checked locking with volatile. Better in Spring: a default-scope bean." |
+| "Strategy vs Template Method?" | Composition vs inheritance | "Strategy injects an algorithm; Template Method has the parent define the skeleton and subclasses override steps." |
+| "Decorator vs Proxy?" | Visible new capability vs invisible control | "Both wrap and delegate. Decorator is for capabilities the caller wants; Proxy is for cross-cutting concerns the caller shouldn't see." |
+| "Why does `@Transactional` on a self-call not work?" | Proxy bypass | "Self-invocation calls the impl directly. The proxy isn't in the path." |
+| "Builder vs telescoping constructors?" | Optional params, validation | "Builder when you have many optional params or a validation step before construction." |
+| "Observer vs `Flux`?" | Broadcast vs reactive stream | "Observer is one-shot per event. Flux is a stream — backpressure, composition, async." |
+
+### Three anchor pictures
+
+1. **Strategy is a value.** Pass the algorithm in. Comparator is the textbook example.
+2. **Proxy controls access; Decorator adds capability.** Both wrap.
+3. **Spring's machinery is patterns all the way down.** Beans are factories; transactions are proxies; events are observers.
+
+---
+
+## 7. Cheat Sheet — Rapid-Fire Q&A
 
 ### Q1: Singleton — how to implement correctly?
-**A:** Best: `enum Singleton { INSTANCE; }` — serialisation-safe, thread-safe, simple. Alternative: double-checked locking with `volatile`. Avoid: eager init with `static final` (okay but wastes memory if unused). Anti-pattern warning: singletons are global state — hard to test.
+**A:** Best: `enum Singleton { INSTANCE; }` — thread-safe, serialisation-safe, simple. Alternative: double-checked locking with `volatile`. In Spring, prefer a managed bean (default scope is singleton). Singletons are global state — hard to test, so use sparingly outside of frameworks.
 
 ### Q2: Factory Method vs Abstract Factory?
-**A:** Factory Method: single method decides which subclass to instantiate (`PaymentProcessor.create(type)`). Abstract Factory: family of related objects (`UIFactory.createButton()`, `UIFactory.createCheckbox()` — each factory produces consistent platform UI).
+**A:** Factory Method: a single method picks which subclass to instantiate (`Notification.create(type)`). Abstract Factory: an interface for creating *families* of related objects, ensuring consistency (e.g. `UIFactory` produces `Button` + `Checkbox` of the same theme).
 
-### Q3: Builder — when use it?
-**A:** When constructor has many parameters (>4), especially optional ones. Fluent API: `Account.builder().name("Alice").balance(1000).build()`. Avoids telescoping constructors. Lombok `@Builder` auto-generates.
+### Q3: When use Builder?
+**A:** Many constructor parameters (>4), especially optional. Telescoping constructors become unreadable; Builder is fluent and easy to extend. Lombok `@Builder` generates it.
 
 ### Q4: Strategy — explain it.
-**A:** Define a family of algorithms, encapsulate each, make them interchangeable. E.g., `SortStrategy` → `QuickSort`, `MergeSort`. Client picks strategy at runtime. In modern Java, lambdas often replace strategy classes: `list.sort(Comparator.comparing(Employee::getName))`.
+**A:** Define a family of algorithms, encapsulate each behind a common interface, make them interchangeable. Client picks the algorithm at runtime. In modern Java, lambdas often replace whole strategy classes. `Comparator` is the canonical example.
 
 ### Q5: Observer — explain it.
-**A:** One-to-many dependency. Subject notifies observers on state change. Event-driven systems, pub-sub. Spring's `ApplicationEventPublisher` is an observer pattern. Decouples producers from consumers.
+**A:** One-to-many dependency. Subject notifies observers when its state changes. Decouples producers from consumers. Spring's `ApplicationEventPublisher` + `@EventListener` is built-in Observer.
 
 ### Q6: Proxy — explain it.
-**A:** Control access to another object. Spring AOP uses CGLIB proxies for `@Transactional`, `@Cacheable`, `@Async`. Also: lazy init proxy, security proxy, remote proxy. The caller doesn't know it's talking to a proxy.
+**A:** Stand-in object that controls access to the real one. Spring uses CGLIB / JDK proxies for `@Transactional`, `@Cacheable`, `@Async`, `@PreAuthorize`. The caller calls the proxy without realising it.
 
-### Q7: Template Method — explain it.
-**A:** Superclass defines algorithm skeleton, subclasses override specific steps. E.g., `AbstractReport.generate()` calls `fetchData()`, `format()`, `export()` — subclasses override each. In Java 8+, often replaced with lambdas or strategy.
+### Q7: Why doesn't `@Transactional` work on self-invocation?
+**A:** Self-invocation calls go directly to the implementation, bypassing the proxy. Cross-cutting concerns are added by the proxy, so they're skipped. Fix: inject self, use `TransactionTemplate`, or restructure.
 
 ### Q8: Decorator — explain it.
-**A:** Wraps an object to add behaviour without modifying it. Java I/O uses it: `new BufferedReader(new InputStreamReader(new FileInputStream("file")))`. Each wrapper adds a layer. Open/Closed principle in action.
+**A:** Wraps an object to add behaviour without modifying it. Same interface as the inner. Java I/O is built on Decorator: `new BufferedReader(new InputStreamReader(new FileInputStream("file")))`.
 
-### Q9: Adapter — explain it.
-**A:** Converts one interface to another. Legacy system returns `XmlResponse`; your code expects `JsonResponse` — adapter converts between them. Common in integration layers.
+### Q9: Decorator vs Proxy — what's the difference?
+**A:** Both wrap-and-delegate with the same interface. **Proxy controls access** (hidden cross-cutting, like transaction management). **Decorator adds capability** the caller knows about (buffering, logging, encryption).
+
+### Q10: Adapter — explain it.
+**A:** Converts one interface to another the client expects. Common at integration layers — e.g. wrapping a legacy XML service to satisfy a domain `TradeProvider` interface.
+
+### Q11: Template Method — explain it.
+**A:** Parent defines the skeleton of an algorithm in a `final` template method that calls abstract or default-implementation steps. Subclasses fill in the steps. `HttpServlet.service()` is the canonical example.
+
+### Q12: How does Spring `JdbcTemplate` combine patterns?
+**A:** Template Method (skeleton: get connection → execute → release) with Strategy injected as a lambda (the actual SQL/PreparedStatement work). Often invoked through a `@Transactional` Proxy.
+
+### Q13: Modern Java replacements for patterns?
+**A:** Lambda for single-method Strategy. `Supplier<T>` for Factory. Spring `@EventListener` for Observer. `enum INSTANCE` for Singleton. The patterns still apply; the boilerplate shrinks.
+
+### Q14: Why is `ConnectionPool.getInstance()` with DCL using `volatile`?
+**A:** `new ConnectionPool()` isn't atomic — allocate memory, write fields, publish reference. Without `volatile`, the JIT can reorder these so another thread sees a non-null reference to a partially-constructed object. `volatile` forbids that reordering. See [01 §5.1](./01_concurrency.md#51-the-java-memory-model-and-happens-before).
+
+### Q15: When are patterns over-engineering?
+**A:** When the variation is hypothetical (one implementation, no near-term plan for another), the swap point is fake (the abstraction will never be replaced), or the team doesn't recognise the pattern (introduces friction without payoff). Three branches that don't grow → just write a switch expression.
+
+### Q16: Name an example of each from the JDK or Spring.
+**A:**
+- Singleton — `Runtime.getRuntime()`, default-scope Spring beans.
+- Factory — `Calendar.getInstance()`, every `@Bean` method.
+- Builder — `StringBuilder`, `Stream.builder()`, `WebClient.builder()`.
+- Strategy — `Comparator`, `Predicate`, `AuthenticationProvider`.
+- Observer — `ApplicationEventPublisher`, `PropertyChangeListener`.
+- Proxy — Spring AOP (`@Transactional`, `@Cacheable`).
+- Decorator — Java I/O streams, `Collections.unmodifiableList`.
+- Adapter — `Arrays.asList`, Spring `HandlerAdapter`.
+- Template Method — `HttpServlet`, `JdbcTemplate`, `AbstractList`.
 
 ---
 
-## Can you answer these cold?
+### Key Code Patterns
 
-- [ ] Singleton — enum vs DCL vs eager init
-- [ ] Factory vs Builder — when each
-- [ ] Strategy — modern Java lambda version
-- [ ] Proxy — how Spring uses it for AOP
-- [ ] Decorator — Java I/O example
+**Enum singleton**
+```java
+public enum AppConfig { INSTANCE; public String get(String k) { /* … */ } }
+```
 
-[← Back to Index](./00_INDEX.md)
+**Strategy via lambda**
+```java
+employees.sort(Comparator.comparing(Employee::name));
+new TradingEngine((Trade t) -> t.amount().multiply(BigDecimal.ONE));
+```
+
+**Builder**
+```java
+TradeOrder o = new TradeOrder.Builder("AAPL", 100).price(p).notes(n).build();
+```
+
+**Spring Observer**
+```java
+@EventListener void on(TradeExecutedEvent e) { /* react */ }
+```
+
+**JDK Decorator chain**
+```java
+new BufferedReader(new InputStreamReader(new FileInputStream("a")))
+```
+
+---
+
+## 8. Self-Test
+
+**Easy**
+- [ ] What problem does Strategy solve?
+- [ ] How does Spring use Proxy?
+- [ ] Why is `enum Singleton` preferred?
+- [ ] What's the difference between Decorator and Proxy in *intent*?
+
+**Medium**
+- [ ] Write a Strategy implementation using a lambda for sorting.
+- [ ] Why must the singleton field in DCL be `volatile`?
+- [ ] Show how `@Transactional` self-invocation breaks, and one way to fix it.
+- [ ] Pick a JDK class you've used and identify the pattern it implements.
+
+**Hard**
+- [ ] Compose two patterns to solve: "rate-limit, then log, then call the real service".
+- [ ] Identify three patterns inside Spring's `JdbcTemplate`.
+- [ ] When is introducing Strategy worse than a switch expression?
+- [ ] How does `HandlerAdapter` differ from `HandlerInterceptor` (pattern-wise)?
+- [ ] Refactor a 5-branch `if/else` on type into Strategy with Spring DI.
+
+---
+
+## 9. Glossary (in plain English)
+
+| Term | Plain-English meaning |
+|------|----------------------|
+| **Singleton** | Class with exactly one instance. |
+| **Factory Method** | A method that returns one of several subclass instances based on input. |
+| **Abstract Factory** | An interface for creating *families* of related objects together. |
+| **Builder** | Step-by-step construction of a complex object via a separate Builder class. |
+| **Strategy** | An algorithm passed in as a value; swapped at runtime. |
+| **Observer** | A subject notifying many observers on state change. |
+| **Proxy** | A stand-in object controlling access to the real one. |
+| **Decorator** | A wrapper that adds capability and delegates to the inner object. |
+| **Adapter** | A wrapper that converts one interface to another. |
+| **Template Method** | Parent defines the skeleton; subclasses fill in steps. |
+| **Self-invocation** | A method calling another method on `this` — bypasses the proxy. |
+| **Cross-cutting concern** | A behaviour that spans many classes (logging, transactions, security) — usually added via Proxy/AOP. |
+
+---
+
+[← All topics](./00_INDEX.md) · [📝 Doubts log](./doubts/08_design_patterns_doubts.md) · [← Prev: 07 JVM](./07_jvm.md) · [Next: 09 SOLID →](./09_solid.md)
+
+[↑ Back to top](#08--design-patterns)
